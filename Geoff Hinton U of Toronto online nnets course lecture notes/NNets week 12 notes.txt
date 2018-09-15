@@ -1,0 +1,307 @@
+Week 12
+
+Global config and joint config are synonyms
+
+"Average over all particles" often refers to the eqn:
+
+dlogp(v)/dwij = <si*sj>v - <si*sj>model
+	deriv of log prob of vis vector v wrt weight from unit i to unit j equals the expected
+	value of the activities of units i and j when vis vector is set to v minus the expected
+	value of the activities of units i and j when vis vector is set to the model
+
+"all particles" often means states of all visible and hidden units.
+
+Fantasy particles come from a distrib using Gibbs sampling, not from training set
+	Fantasy particles are binary vectors just like the other configurations
+<SiSj>data is when the visible vector V is clamped on the visible units and <SiSj>model when there is no clamping. No clamp means it is allowed to update during each iteration.
+
+
+BOLTZMANN ML ALGO	
+
+Unsupervised. Just give it input vec, no labels, no desired output
+	Algo tries to build a model of the input vecs
+	We want to max the product of prs that the B machine assigns to the binary vecs
+	1. Equiv to maxing sum of log prs
+	2. Equiv to maxing pr that would obtain exactly the N training cases if let net settle to its stationary distrib
+	N times and then sample visible vec once each time
+Learns params that define a distrib over the visible vecs
+
+Learning can be hard bc of chains of units, some w/ neg and some w/ pos weights to each other. Need to know which are neg
+a few steps away (e.g., if U1 and U5 are anticorrelated, could be bc neg weight on W2-3, W3-4, etc). BUT! Turns out learning
+algo is v simple and only reqs local info!
+	Everything 1 weight needs to know a/b the other weights and the data is contained in the difference
+	of 2 correlations:
+	dlogp(v)/dwij = <si*sj>v - <si*sj>model
+		p(v) is the pr the BM assigns to a vec
+		Deriv of log of that pr wrt is a weight = (expected value of states at thermal equil when vis units are
+		set to v) minus (" when vis is not clamped to any value)
+		<si*sj> is "how often are si and sj on together"?
+			Expected value
+
+Update rule:
+	deltawij is proportional to <si*sj>data - <si*sj>model
+	expected product of the activities avgd over all visible vecs in the training set minus expected product of same
+	two activities at thermal equil w/ vis state not clamped to any particular value.
+
+	Raise weights in proportion to activities units have when you're presenting data, lower them in prop to activities
+	at thermal equil
+		Hebbian!
+		The subtraction keeps weights from exploding
+	Closely related to unlearning! 1st term is like the Hopfield storage rule, 2nd like unlearning to get rid of
+	spurious minima.
+
+Why is the deriv so simple? Well, the pr of a global config at thermal equil is an exponential fct of that config's
+energy
+	pr is proportional to e^-Energy
+	So log(pr) is a linear fct of energy, when at thermal equil
+	Energy is a linear fct of the weights and states
+	So the log pr ends up as a linear fct of the weights and states.
+	-dE/dwij = si*sj
+	
+	Process of settling to thermal equil propagates info ab the weights! So we don't need backprop
+		We DO need 2 stages - settling w/ data and settling w/ no data. (Then subtract products of activities
+		in each to update the weights, see earlier eqn)
+
+
+Why do we need the negative phase, the unlearning-like phase?
+Pr of a visible vector:
+p(v) = ( [sum over h]e^-E(v,h) ) / ([sum over u][sum over g]e^-E(u,g) )
+
+	p(visible vec) = sum over all hids of e^-[Energy of joint config] normalized by same summed over ALL visible vecs
+
+	[sum over h]e^-E(v,h): positive phase decreases energy of sums in this term that are already large. Finds them
+	by setting to equil, finding h that give low E when v is clamped. Given vis values, optimize h values for low E
+
+	[sum over u][sum over g]e^-E(u,g): neg phase finds joint configs that give low energy and so are big contributors
+	to partition fct, and tries to raise their energies so they contribute less
+
+	Want to maximize p(v), so tries to make top line big and bottom line small
+
+
+
+Need to collect statistics req'd for learning. "Pos stats" for pos phase and "neg stats" for neg phase.
+
+First, an ineff way to get those stats:
+	Pos phase: clamp vis to a vector v from training data, set hids to random binary states, update till thermal equil
+	at T=1
+		Then sample <si*sj> for every connected pair of units w/ v clamped.
+		Then repeat for all data vecs in training set and take avg
+	Neg phase: set both vis and hids to random binary states, update units one at a time till therm equil at T=1,
+	as before
+		Then sample ", repeat many times, avg to get good estimate
+			Expect energy landscape to have many minima w/ similar energy, so need to go long and unclear
+			time to get best.
+
+Better ways to get stats:
+-Instead of starting from rand state, start from a "particle," the state you ended up in last time you saw that data
+vector.
+	Do this for both pos and neg phases; the ones in neg phase are called "fantasy particles"
+Works for full-batch, but not for minibatch bc update weights too many times before return to a data vec, get far from
+equil.
+However, let's assume that when a data vec is clamped, the set of good expls (i.e. hid states that are good features)
+is unimodal
+	Restricts us to only being able to learn fairly similar expls
+	Lets us make a "mean field approximation"
+We need to update the units stochastically and sequentially.
+The update rule here is: pr of turning on unit i:
+	pr(si=1) = sigma(bi + [sum over j]si*wij)
+		where sigma is sigmoid fct
+		sigmoid fct of input si gets from other units and si's bias
+We can speed up by using prs instead of bi states and updating in parallel:
+	(pi at t+1) = sigma(bi + [sum over j] (pj at t)*wij
+		the sum over j is sum of (all the other prs at time t times weights)
+	This can fuck up and cause oscillations; solution is "damped mean field", which takes intermediate steps:
+	(pi at t+1) = lambda*(pi at t) + (1 - lambda)*sigma(bi + [sum over j](pj at t)*wij )
+
+An efficient minibatch learning proc for BMs (Salakhutdinov and Hinton, 2012):
+	Pos phase: 
+		Initialize all hidden prs to 0.5
+		Clamp a data vec on the vis units
+		Update all hids in parallel using mean field as described above until convergence, i.e. until prs
+		stop changing
+		After net has converged, record pi*pj for every connected pair of units, and avg this over all data
+		in the minibatch
+	Neg phase:
+		Keep set of "fantasy particles." These are negative examples to contrast w/ the positive examples. Each 
+		has a value that is a joint config.
+		Sequentially update all units in each fant part a few times
+		Then for every connected pair of us, avg si*sj over all fant parts
+
+	Then change the weights by diff b/w pos phase avg and neg phase avg
+
+
+Making the updates more parallel:
+An archi w/ lots of hid layers but no conns w/in a layer and no skip-layer conns allows parallel updates, much more
+efficient than sequential updates. This is a "Deep Boltzmann Machine" - like normal BM but w/ lots of missing conns.
+	Can update 1/2 the units in parallel, then other 1/2
+A DBM can learn good reps of MNIST digits
+
+Surprisingly, we can learn good reps w/ only 10 particles (pos examples) and 100 fantasy particles (neg examples) for neg
+phase. 
+The neg phase works bc the global config space is highly multimodal for all interesting problems
+But w/ only 100 pos examples, how does it find and rep all the modes (=local peaks)?
+Well, turns out the learning interacts w/ the Markov chain used to update the fantasy particles (= used to gather the
+neg statistics), giving it a much higher effective mixing rate.
+	The learning makes the gathering of neg stats more effective! Effects of pos and neg phases are joint, not
+	additive.
+	When fantasy particles outnumber the positive data, the energy surface is raised, increasing mixing rate of 
+	the Markov chain
+		Great for bouncing fantasy particles out of energy minima
+		Makes the fantasy particles move around much faster than the mixing rate defined by current static weights
+		in the Markov chain, simulating higher mixing rate.
+	So energy surface has 2 roles: represents our model, but also is manpulated by learning rate to simulate higher
+	mixing rate.
+
+
+RESTRICTED BMs
+No conns b/w hids. Makes equil state of hids when vis clamped easy to compute in a single step.
+A variant of standard BM algo allows v efficient learning on RBMs.
+RBM restricts connectivity to make inference and learning easier. Only 1 layer of hids, no conns b/w hids.
+When vis clamped, takes only 1 step to reach thermal equil.
+	Takes only one step bc all hids are indep of each other, so can get exact pr hid unit j will turn on
+	So can rapidy get exact value of <vi*hj>v
+
+	pr hj will turn on is:
+	p(hj=1) = 1 / ( 1+e^-(bj + [sum over all i in vis]vi*wij) )
+
+Minibatch RBM learning proc is called "PCD." Source Tieleman 2008.
+	Pos phase:
+		Clamp a data vec on vis us.
+		Then compute <vi*hj> for all vis-hid pairs.
+		For every connected pair of us, avg <vi*hj> over all data vecs in the minibatch.
+	Neg phase:
+		Keep a set of fantasy particles (i.e. global configs that are neg examples).
+		Update each fant part a few times using alternating parallel updates
+		Then for every connected pair, avg vi*hj over all the fantasy particles
+	As usual, then subtract neg phase from pos phase, result is the weight update.
+	This is great for building (pr?) density models, but slow.
+	
+
+An ineff way to do BM learning on an RBM is to start w/ a training vec on vis units, then alternate b/w updating
+all hids in parallel and updating all vis in parallel.
+	Run for arbitrarily long time
+	deltawij = epsilon(<vi*hj>0 - <vi*hj>infinity)
+		Expected value at time 0 - " at time infinity
+		I don't know what epsilon is here - learning rate?
+		Takes long time to reach thermal equil
+	Good news: if run this chain for only a short time, it still learns pretty good!
+
+hids	    [  j  ]	    [  j  ]
+	     /     \          /
+   <vi*hj>0 /       \<vi*hj>1/
+	   /         \      /
+vis	[  i  ]      [  i  ]
+	data	     reconstruction
+	t=0		t=1
+
+This is Gibbs sampling! It's a delightful bootstrappy process. Fix v1, then given that take a sample from distrib P(h|v1),
+then use the h1 state in that sample to get samples v2 from a sample of P(v2|h1)
+
+Start w/ a training vec on vis
+	Update all hids in parallel
+	Update all vis in parallel to get a "reconstruction"
+	Update all hids again
+Just do 1 full update!
+	deltawij = eta(<vi*hj>0 - <vi*hj>1)
+Obv, this isn't max likelihood. It is NOT following the gradient of the log likelihood. But it works well!
+Why does it work?
+If we start at the data, the Markov chain starts to wander away from the data toward equil.
+We can tell dir it's going in after only a few steps
+And if weights are bad, waste of time to let it go all the way to equil
+All we need to do is lower the pr of the reconstruction it makes after 1 full step and raise the pr of the data.
+	That'll stop it from wandering away from the data.
+	When the data and the 1-step reconstructions have same distrib, the learning stops.
+This is called "contrastive divergence learning."
+	How it works: consider an energy surface that changes when we change the weights
+	Starts w/ monotonic curve w/ data pt on one side, reconstruction and hidden further over
+	Change weights to pull energy down at the data pt and up at the reconstruction
+	This creates a local min at the data pt and local max at the reconstruction!
+		So, lowers energy of the data, raises energy of the reconstruction, making it learn data better
+Now, this fails to change energy surface at places that are far away from any data.
+	These low energy holes makes the normalization term big, and this shortcut prevents acting on them.
+A solution: persistent particles that fall into a hole, cause it to fill up then move on to another hole. (This is an expl
+of learning process, I don't get it).
+
+A good compromise bw speed and correctness is to start w/ small weights and use contrastive divergence w/ one full step
+to get the neg data.
+	Then, once the weights have grown a bit, we switch to contrastive divergence w/ 3 full steps.
+	And then when weights have grown more, 3 full steps.
+	And then when weights have grown more, 10 full steps.
+	By increasing # of steps as weights grow, we keep the learning working well even though the mixing rate of the
+	Markov chain is going down.
+	Refer to number of steps that run contrastive divergence for as CD1 for one step, CD3, CD10, etc.
+
+Example: RBM learning to recog handwritten digit 2.
+	16x16 pixel data -> 50 binary neurons to learn features -> 16x16 pixel reconstruction
+	For each pixel, binary decision on/off
+	Pos phase: increment weights b/w an active pixel in data and an active feature
+	Neg phase: decrement weights b/w an active pixel in reconstruction and an active feature
+	Learning is to change the weights to make data lower energy and reconst higher energy - tends to start w/ reconst
+	low energy, which we don't want
+
+Initialize weights (50 hids x 16x16 input-pixel-reading binary vis units, so 50x256 weights) to random values to break symm
+
+Can reconstruct a 2 pretty faithfully
+What gets interesting is when we give it an image from an unfamiliar digit class.
+Feed it a 3, and its first reconstruction will look more like a 2. Bc it already learned 2s. Hasn't learned feature
+detectors for a 3 yet!
+	W/ 500 hids and long training using contrastive divergence, can learn feature detectors for all 10 digits
+		Fun quirk in example - the data was normalized such that never have active pixels near top, so strong
+		neg weight featre detector there
+		Develops complex combos of which f dets are on and off to recog digits
+
+
+COLLABORATIVE FILTERING - think recommender systems.
+Netflix competition showed that CAN train a restricted Boltzmann machine on big data. Trick involves sparseness of the
+data - nearly all movies have been rated by nearly none of the raters.
+
+Setup: get most of the 1-5 ratings that 500k users gave 18k movies, ~100M ratings total. Each user only rates small
+fraction of the movies.
+
+Predict the ratings users gave to the held out movies. Have to infer using user's ratings of other movies, and other
+users' ratings of same movie.
+
+Approach: "language model"
+	The data is strings of triples of the form User, Movie, Rating. Compare to family trees!
+		X has-wife Y. X rates-5 Y. Q rates-2 U.
+	So we're trying to do next word prediction, basically.
+	A simple method that's hard to improve on is "matrix factorization." Here's how it works:
+		Learn feature vecs for User 4 and Movie 3
+		Take the scalar product of those vectors
+		Use that for the rating we predict User 4 will give Movie 3.
+			Not even a softmax, just outputting a real number!
+
+RBM way: treat each user as a training case. A user is a vector of movie ratings.
+	1 vis unit per movie. Not binary unit, 5-way softmax.
+	A 5-way softmax vis for each movie, ~100 binary hids
+	18k movies -> 18k vis. Each of the 5 states in each vis has a weight to each of the 100 hids. So, lots of params.
+
+Constrastive divergence (CD) learning rule for a softmax is same as for a binary unit.
+
+The model tries to fill in missing values. But w/ 18k movies most of which most users haven't rated, this sucks. How do
+we avoid dealing w/ all those missing ratings?
+
+For each user, use an RBM that only has vis units for the movies the user rated.
+	Instead of 1 RBM for all users, have a diff RBM for every user. BUT, all these RBMs use the same hids.
+	The weights from each hid to each movie are shared by all the users who rated that movie
+	Each user-specific RBM only gets one training case, but the weight-sharing makes this ok
+	Then use CD learning, starting w/ 1 step then 3, 5, 9.
+	Salakhuldinov et al 2007.
+
+RBMs work a/b as well as matrix factorization for this... but give v diff errors. So do model avging and get great
+improvement.
+	Winner did a model avging blob w/ 100+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

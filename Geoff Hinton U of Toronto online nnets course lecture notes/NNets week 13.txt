@@ -1,0 +1,242 @@
+http://www.cs.toronto.edu/~tijmen/csc321/documents/sbn_model.pdf
+
+Comparison of problems looked at in 'traditional stats' and 'traditional AI':
+
+Stats:
+Under 100 dims
+Lots of noise in the data
+Not much structure in the data, simple model can capture the data
+Main prob is separating true str from noise
+	SVM or Gaussian Process good here
+	Bayesian nnet can work well for separating true str from noise; non-Bayesian nnet can't
+
+AI:
+Over 100 dims
+Noise not the main problem
+Huge amt of structure, but complicated str
+Main prob is finding a way to rep the str so it can be learned
+	Backprop is great for learning representations!
+
+SVMs aren't good for tasks that need good reps. SVMs are like p.trons that expand the input to a v large layer of
+nonlinear, *non-adaptive* features, have 1 layer of adaptive weights (that fit v efficiently and avoid overfitting -
+"kernel trick" fits a max margin hyperplane in high-dim space)
+Alt view of SVMs: use each input vec in training set to define a non-adaptive "pheature." This is roughly a match
+bw a test input and a train input. Have a clever way to simultaneously do feature selection and find weights on
+remaining features.
+	Can't learn mult layers of represenation, bc only 1 layer of adaptive weights
+
+BELIEF NETS
+How do we do unsup learning that still gets the advantages of gradient descent? Well, generative models like RBMs that
+try to model the input rather than predict a label are a start
+
+Graphical models: combine discrete graph strs to rep how vars depend on each other w/ real-valued computations for pr of
+one var given other observed vars
+	Boltz machines are undirected graphical models
+	Directed graphical models called "Sigmoid Belief Nets" showed promise - question of how to train them arose.
+
+Disads of backprop:
+	Reqs labeled data
+	V slow in nets w/ mult hid layers (but initializing right helps)
+	Local minima still can be big problem - CAN get stuck, and in deep nets initialized w/ random weights can get
+	stuck far from global minimum
+Unsup learning: adjust weights to max the pr that a generative model would have generated the input
+	Max pr(observed data), not pr(label | observed data)
+What kind of generative model should we learn?
+	Options:
+		Energy-based (like BM)
+		Causal, made of idealized neurons
+		Hybrid of the two
+Belief nets are a causal model; we'll learn them, then learn hybrid energy-causal models that are better.
+
+Graphical models using probabilities beat rules-based expert systems
+	Good for reping what depending on what
+	Then had to compute prs for nodes of a graph given states of other nodes
+Belief nets: discovered good inference algos for sparsely connected DAGs
+	Given observed nodes, infer states of unobserved
+	# of nodes that affect each other goes up exponentially, so doesn't work well for densely connected
+
+A belief net is a DAG composed of stochastic vars:
+
+		Stochastic hidden causes:
+		h1    h2
+       	       / |\  /  \     
+  	      h3 | h4	 h5
+                \|/  \  /
+                v1    v2
+               Visible effects
+We want to solve 2 problems
+Inference prob: infer states of the unobserved vars (find pr distribs, not exact values)
+	Likely to be complicated pr distribs w/ exponential # of terms if unobs depend on each other
+Learning prob: given training set of observed ves of states of all the leaf nodes, how do we adjust the interactions
+bw vars to make the net more likely to generate that training data.
+	Adjusting the interactions involves both deciding which nodes affect which other nodes and the str of each effect
+
+Early graphical models used experts to define graph str and conditional prs. Focused on doing correct inference, not
+learning; while nnets people always put learning central, didn't aim for interpretability or sparse connectivity.
+
+There are 2 types of generative nnet composed of stochastic binary units
+	1. Energy-based: connect binary stochastic ns symmetrically to get a Boltzmann machine.
+		Easy to learn weights IF restrict conns the Restricted Boltzmann Machine way, but since that's only 1
+		hid layer it sacrifices a lot of power
+	2. Causal: connect binary stochastic ns in a directed acyclic graph to get a Sigmoid Belief Net.
+		Belief net in which every node is a binary stochastic neuron
+		Take u.s in top layer, determine their binary states, then make stochastic decisions a/b middle layer
+		states given top layer, etc.
+	Get an unbiased sample of the vecs of visible values your nnet "believes in."
+
+WAKE-SLEEP ALGO
+Way to make sigmoid belief nets learn efficiently
+Has pos and neg phase, but unlike Boltzmann Machine training (contrastive divergence) it's for directed rather than undir
+graphical models.
+	Led to area called variational methods. Is great way to learn complicated graphical models.
+	Idea is to compute an approx to post distrib and then apply max likelihood (which would be correct if we had
+	true post distrib) on this approx.
+	Works bc one term in the learning drives weights toward sets of weights for which the approx post is a good fit
+	for the real post - bc manips real post to be closer to the approx
+	Karl Friston thinks this is how brain learns. (Hinton disagrees).
+
+It's hard to infer post distrib over hidden configs given data, for a complicated model like a Sigmoid Belief Net. Hard
+to even get an unbiased sample from the post distrib.
+For SBNs, we can get good results by sampling from a simple approx to the true post. At each hid layer, we make
+simplifying assumption that the post over hidden configs can be factorized to just a product of the distribs of each 
+separate hid
+	So, we ignore hid-hid conns! Given the data, pretending hid-hid cons don't exist.
+		Like RBM learning, but in RBM there really aren't hid-hid conns and here there are but the learning rule
+		ignores them.
+
+Factorial distributions:
+In a fac distrib, pr of a whole vec is just the product of the prs of its individual terms (they're factors of the whole)
+e.g. 	hid layer:	u1	u2	u3
+	p(1):		0.3	0.6	0.8
+
+so	p(1,0,1):	0.3 * (1-0.6) * 0.8
+and	p(1,1,0):	0.3 *   0.6 * (1-0.8)
+
+A general distrib over binary vecs of length N has 2^-1 degrees of freedom, while a factorial distrib has only N
+degrees of freedom, much simpler.
+
+Wake-sleep algo: consider a generative model w/ two sets of weights. Generative weights, the true weights of the model,
+define the pr distrib over data vecs. Then have extra weights called recognition weights that use to approx the
+post distrib. Use them to construct the factorial distrib that approxes the post distrib.
+
+R=recognition	W=generative
+
+	   h3
+	  ^  |W3
+	R3|  V
+	   h2
+	  ^  |W2
+	R2|  V
+	   h1
+	  ^  |W1
+	R1|  V
+	  data
+
+WAKE PHASE:
+Input data in vis layer at the bottom. Do a forward pass thru the net using the recognition weights. At each layer,
+make stochastic binary on/ off choice for each unit. So, get a vector of binary hid states once done.
+
+Then we treat that hid state as a sample from true distrib and do max likelihood learning in which we train the
+*generative* weights to reconstruct activities in each layer from the layer above
+
+SLEEP PHASE:
+Start w/ random state in top hid layer, generating states of units from prior in which they're indep, and then backpass
+using generative weights to generate state for each layer at a time
+
+Train recog weights to try to reconstruct activities in each layer from the layer below
+	= to try to recover the hid states that gen'd the states in the layer below
+
+
+In wake phase, we're using the recognition weights to drive the system, and learning the generative weights.
+In sleep phase, we're using the generative weights to drive the system, and learning the recognition weights.
+
+If start w/ random weights and alternate sleep and wake phases, can learn a good model.
+
+Flaws in sleep-wake algo:
+1st is minor: the recog weights are training to invert the generative model, and at beginning of learning they're doing
+so on still-pretty-random generative weights that don't fit the data well yet, which is wasteful.
+2nd is serious: recog weights don't follow the grad of the log prob of the data. Leads to incorrect mode-averaging,
+i.e. treating two-peaked distributions as one-peaked with an intermediate peak.
+	Doesn't even follow gradient of variational bound on the probability (I dunno what this bound is), though does
+	approx that
+Posterior over the top hidden layer is treated as independent - we approximate it w/ a distrib that assumes independence
+- but we know it very much isn't bc of "explaning away effects"
+	EA effects: if A and B both cause C, A and B may be indep, but A|C and B|C aren't.
+	EA effects are a bigger problem at top hid layer than in intermediate hid layers, bc EA effects coming from
+	below can be partly cancelled by prior effects coming from above.
+
+MODE AVERAGING
+
+	  -10			    -10
+hid layer ----> ?		? <-----
+		 \+20		/
+		  \            /+20
+data layer	   --->?<------
+		   -20/
+
+Bias terms here are all negative: -10, -10, -20. Weights are positive: +20, +20
+
+Suppose we run sleep phase and generate data from this model. Most of the time those two hids will be off - they're v
+unlikely to turn on under their prior bc big neg biases (-10), so usually that vis unit will be off too, bc of its
+own big bias term of -20
+In ~ e^-10 runs, one of the hids will turn on; equal pr of each. And when does, +20 weight cancels -20 bias, giving the
+vis a 50% chance of turning on.
+So, if vis is on, v likely left hid OR right hid is on (but NOT both, bc e^-10 is small), and unlikely that neither is on
+(e^-20)
+Now think a/b how learning will affect the recognition weights. They'll learn (0.5, 0.5), bc when vis on, equal chance
+each hid on.
+(0.5, 0.5) reps a distrib w/ 1/2 its mass on (1,1) or (0,0), which are both v improbable when vis is on. (though of course
+(0,0) v prob when vis off)
+So, mode averaging gives a distribution that's mostly in between the peaks of the true bimodal posterior. Just picking
+one mode (one peak) is much better than mode avging. And if you are assuming the posterior over hid states factorizes
+(in sleep wake we are assuming this), picking one mode is the best you can do.
+In variational learning, we manip the true posterior to make it fit the distrib we're learning.
+	In normal learning, we manip an approx to fit the truth.
+
+LECTURE 13C https://www.youtube.com/watch?v=5zhhr7HpqjQ&list=PLxlkFRjtIpimSTSZDVQCXAe9IPemiXIHH&index=2
+Unlike BMs, Sigmoid Belief Nets DON'T need 2 phases; only need pos phase. This is b/c they are "locally normalized"; no
+need to norm by partition fct. IF get unbiased samples from post given data, can follow grad specified by max likelihood,
+using minibatches. But hard to get unbiased samples due to explaining away.
+	It's easy to gen an unbiased example at the leaf nodes (vis units), but hard to get sample from all possible
+	configs of hid causes.
+
+Formula: for a unit i fed by units j:
+p(si=1) = 1/ (1 + exp(-bi - [sum over j]sj*wji) )
+
+deltawji = epsilon*sj*(si-pi)
+
+Learning rule: for each unit, max the log prob that its binary state in the sample from the posterior would be generated
+by the sampled binary states of its parents.
+
+Explaining away is a little like a XOR gate. Given event, both possible causes of event become v unlikely, but both causes
+AT SAME TIME v unlikely.
+	p(earthquake) and p(house hit by truck) are low. p(house shaking) is low. p(earthquake | shaking) and
+	p(truck | shaking) are quite high. p(truck and earthquake) is very low, and so is p(truck and earthquake | shaking)
+
+
+Why it's hard to learn sigmoid belief nets 1 layer at a time:
+To learn W, need to sample from post distrib in 1st hidden layer
+	Problem 1: the posterior is NOT factorial, bc explaining away kills independence. 
+	Prob 2: the post depends on a prior created by hidden vars in the layers above - so now we need to know weights in
+	higher layers.
+	Prob 3: getting that prior for the 1st hid layer reqs integrating over all possible configs in higher layers
+
+Solutions: 
+Monte Carlo to sample from post (still sucks for big deep nets)
+Variational methods (approx samples, NOT unbiased samples from post)
+Sampling from the wrong distrib (can get an ok bound)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

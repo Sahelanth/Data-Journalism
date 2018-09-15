@@ -1,0 +1,290 @@
+Backprop can learn feature representation of a word. Can turn relationship into feature vectors
+that capture meaning of words.
+
+A family tree can be expressed using relationship words, e.g. indicating who has who as mother,
+husband, etc.
+	Expressed in "triples" like "X has-wife Y"
+	Can figure out the regularities in trees using these triples
+	Searching for symbolic rules like (X has-mother Y) + (Y has-husband Z) -> (X has-father Z)
+	is difficult - v large discrete space of possibilities
+	A neural net can search a continuous set of weights for way to encode same info
+
+Structure of NN for this:
+Local encoding of person 2								output layer
+	^
+	|
+Distributed encoding of person 2
+	^
+	|
+Units that learn to predict output features from input features
+	^						^
+	|						|
+Distributed encoding of person 1		Distrib encoding of relationship
+	^						^
+	|						|
+Local encoding of person 1			Local encoding of relationship		input layer
+
+
+Goal of the above net: enter a person and a relationship as input, get the person who holds
+that relationship to that person as output
+
+In family tree we have 24 people, 12 rels (father, son, etc)
+Local encoding: for person, a 24-dim binary cetor, where all values are 0 except for 1 that reps 
+specific person who is 1
+	Why not do a simple 5-dim binary encoding, which can handle 2^5 > 24 people?
+	B/c 24D makes each subset of persons linearly separable from every other disjoint subset,
+	and asserts no a priori info a/b the persons
+		All pairs of people are equally dissimilar in 24D rep
+Distrib encoding layer for person 1 has fewer neurons - here, 6. Re-represents person as pattern
+of activity over 6 rather than single 1 of 24. THis is so will learn to reveal/ encode structure in the task.
+
+Train w/ backprop. After training, 1 of the neurons learned to tell the 12 English from 12 Italian people
+	If input person is English, so is output person, that gives 1 bit of information! Halves possibilities.
+1 N learned generation. Generation is effectively 3-valued - big positive weight for oldest gen, big negative
+weight for youngest, intermediate for intermediate.
+1 N learned right vs left branch of the family tree.
+So, these 6 hidden units learned useful features!
+These features are useful if the other bottlenecks use similar reps and central layer learns the way features
+predict other features, e.g. that when input person is gen 3 and relationship requires answer to be 1 gen up,
+the output person must be gen 2.
+	1st and last hidden layers must extract features. Middle hidden layer must relate these features
+	correctly.
+Trined it on 108 of the 112 possible triples that can be made w/ the 12 rels. Then tested on diff combos
+of 4 holdouts. 1/2 to 3/4 accuracy. Not bad for only having 24-way training data - much better than chance.
+W/ millions of relational facts of form (A R B), can get v good at finding B from A R.
+	This is good for cleaning databases - flag unlikely triples, since they're likely errors.
+	In (A R B), input dim is # of possible values for A + # of possible values for R. And A and R are symbols
+	rather than vectors of real #s, though can encode them as vectors.
+We could also input (A R B) and predict pr that that fact is correct, rather than using A R to predict B.
+
+
+Cog sci - there's a debate a/b feature vec reps of concepts vs relation-to-other-concepts reps of concepts
+These are diff theories of what it means to have a concept.
+Feature theory: a concept is a set (vector) of semantic concepts
+	Good for explaining similarities, convenient for ML
+Structuralist theory: meaning of a concept is in its rels to other concepts. Best expressed as a relational
+graph rather than as a big vec.
+However! A NN can use vecs of features to implement a rel graph, as we saw above!
+	No *explicit* inference is required to reach the consequences of the facts that were explicitly learned
+Interactions b/w many implicit "microfeatures" lead to explicit feature. Net can "intuit" the answer in a
+forward pass.
+
+How do you implement a rel graph in a NN?
+	Using a neuron as a node in the graph and a connection as binary rel is "localist" method, and it
+	doesn't work.
+	We need many diff kinds of rel, like mother and aunt. And connections in a NN don't have kinds,
+	just weights.
+	Also we need ternary rels (A is b/w B and C, for example), not just binary rels
+Best method is prob "distributed reps", w/ many Ns used for each concept and each N involved in mult concepts
+
+
+SOFTMAX OUTPUT FCT
+A way of forcing the outputs of a NN to sum to 1 so that can use them as a probability distribution.
+
+First, drawbacks of squared error measure
+	V hard to fix distant errors, like getting actual output 1^-10 to the desired output 1. V small gradient,
+	will take v long time to fix errors.
+	If we want to assign Prs to mutually exclusive class labels, the outputs should sum to 1, but error^2
+	cost fct can't "tell" this.
+So, we should force the outputs to rep a Pr distrib across discrete alternatives, if that's what we wanna use
+them for.
+error^2 is bad w/ logistic units b/c derivs hit plateaus near 0 and 1.
+	A large global learning rate won't help  b/c amplifies gradient when near 0.5.
+*For logistic units*, instead of error^2, use cross-entropy: a loss fct
+	E = -t*log(y) - (1 - t)*log(1 - y)
+	For this, dE/dz = y - t
+
+SOFTMAX
+Units in a softmax group each receive some total input zi, called the logit, and give an output yi that depends
+not just on zi but also on the zs of other units.
+
+
+^	^	^
+|	|yi	|
+O	O	O
+^	^	^
+|	|zi	|	yi = (e^zi)/( [sum over j](e^zj) )
+			dyi/dyz = yi(1 - yi)
+			
+			output equals e^zi divided by sum of input to all Ns in the softmax group
+Useful properties: All the yis always sum to 1; has a nice simple derivative
+Output doesn't change if you add a constant to all z-values, but DOES change if multiply z-values by a constant,
+b/c exponents.
+
+
+Cross-entropy is the cost fct to use w/ softmax.
+	C = - [sum of] tj*log(yj)
+	The neg log probability of the correct answer
+	THat is, we want to maximize log pr of getting the answer right
+
+If 1 target value is 1 and the rest are 0, simply sum over all possible answers, put 0 in front of wrong and 1 
+in front of right answers, and that gives us the eqn above.
+C has a v big gradient when target output is 1 and output is close to 0
+	This means it's really good at fixing values like 1^-10, driving them back up much faster than error^2
+	can
+dy/dz is v flat when answer is v wrong. dC/dy is v steep when answer is v wrong. This balances out
+to a sensible dC/dz.
+	dC/dz = [sum over j] dC/dyj * dyj/dzi = yi - ti
+
+	dC/dz = yi - ti		actual output minus target output
+Need sum over j b/c changing i changes the output of all the diff units above it
+Slope never exceeds 1 or -1, and slope is only v small when yi has nearly reached it.
+
+
+NEURO-PROBABILISTIC LANGUAGE MODELS
+A use case for feature vecs that represent words
+In spech recog, having a good idea of what people might say next is helpful in figuring out what they are saying
+We can't perfect ID phonemes in noisy speech; often several diff words fit the acoustic signal
+equally well. So! Have to know which words are likely to come next and which aren't.
+
+Standard trigram method:
+Take huge amt, count frequencies of all triples of words, use them to predict relative Pr of a word given
+previous two words.
+
+p(w3=c | w2=b and w1=a) / (p(w3=d | w2=b and w1=a)   =  count(abc)/count(abd)
+
+Hard to use more than trigrams - takes a lot of storage and counts are mostly 0
+When count for a trigram is 0, "back-off" to a digram
+Trigram model doesn't "know" to use a lot of info that can help predict next word
+	e.g. synonyms or similar words! "Bob got hit" should make "Bob got punched" more likely
+		Same w/ "It rained on Friday" -> "It rained on Saturday"
+
+So! Convert word into vec of semantic and syntactic features, use that to predict features of next word
+	A feature representation also allows a context w/ more words - e.g. 10gram instead of trigram
+
+BENGIO NN FOR PREDICTING NEXT WORD
+
+
+Softmax units (1 per possible next word)		output layer
+^	^			     ^
+|	|			     |
+|    Units that learn to predict word| output from features of input word
+|	^			^    |	
+|	|			|    |
+Learned distrib encoding    " word t-1
+of word t-2
+	^			^
+	|table lookup		|table lookup
+    Index of word at t-2	" at t-1
+
+V similar to the relationship-from-family-tree NN
+Index is like a set of Ns, 1 of which is on and whose weights determine pattern of activity in next layer,
+the distrib rep (basically feature vector) layer
+Hidden layer takes these distrib reps, then uses a huge softmax to predict pr of all words that might
+come next
+A refinement that makes it work better is "skip-layer" conns right from input words to output words;
+input is highly informative even without processing
+
+Now, this model did slightly worse than trigrams! But close, and composite of it and trigrams did better
+than trigrams. 
+Modern NNs beat trigrams.
+
+
+Counting parameters:
+If a network is fully connected and has 2 layers w/ n nodes each, it has n^2 parameters (all weights)
+If there's a middle layer w/ n/100 nodes, then lower-> middle has n*n/100 connections, and
+middle->top has n*n/100, for total (n^2)/50 parameters
+This means multilayer NNs can be much more compact that input->output only NNs.
+
+If you have 100k output words, EACH unit in the last hidden layer has 100k outgoing weights!
+	Hard to afford. And if make the last hidden layer small, it's hard to get low-Pr words right
+	Is there a better way to deal w/ so many outputs? Yes!
+
+
+Ways to avoid needing 100k output units to get Prs for 100k words:
+Can embed words in a 2D space as a way to visualize what words have similar vec reps to each other
+
+Can avoid need for 100k outputs by using serial architecture:
+	logit score for candidate word
+		^
+		|
+Hidden unit that discover good or bad combos of features
+	^			^		^
+	|			|		|
+Learned distrib encoding	" t-1		"candidate
+of word t=2
+	^			^		^
+	|			|		|
+index of word at t-2		" t-1		index of candidate
+
+Output is score for how good an input candidate word is in this context
+Inputs from index to hidden are same for every candidate word that run thru. Try all candidate words
+one at a time
+Can use learned feature vec rep both as context and as rep of candidate for same word. Same rep for a word.
+
+Learning in serial architecture: compute logit score for each candidate word, then put all the logits
+in a softmax to get word prs.
+The diff b/w these word prs and their target prs gives cross-entropy error derivs
+	Diff is normally 1 for correct word, 0 for all others
+	Can use these derivs to raise the score of the correct candidate and lower the scores of its
+	high-scoring rivals
+We can save a lot of time if we only use a small set of candidates. FOr ex, can feed the top-pr words from a
+trigram model into this NN to revise their prs.
+
+Another method to avoid huge softmax is to arrange all the words in a binary tree w/ words as leaf nodes. Predict
+next word by predicting a path thru a tree. Use context to generate a "prediction vector" v, which compare
+w/ a learned vector u at each node of the tree.
+Apply logistic fct to the scalar product of u and v to predict the pr of taking right branch of tree.
+	1 - [that quantity] is pre of taking left branch.
+Where sigma = logistic fct:
+
+					ui
+		________________________|_______________
+		|1-sigma(v^T ui)			|sigma(v^T ui)
+		uj_________				uk__________    
+		|	   |				|	    |
+1-sigma(v^T uj) |   	   |sigma(v^T uj)		|1- " uk    | " uk
+	  	|	   |				un
+		ur	   um				
+etc.
+
+A picture of the learning for this tree:
+
+			prediction vector, v
+			^		^
+			|		|
+learned distrib encoding of		" t-1
+word t-2
+			^		^
+			|table lookup	|
+		index of word at t-2	" t-1
+
+Add up the evidence from each learned distribution (= feature vec) to get a pred vec, which then
+compare w/ the vecs that've been learned for all the nodes in the tree for the path to the correct
+next word.
+	During learning, only need to consider the nodes that form the correct path
+	How do we max the pr of taking the correct path? By maxing product of prs of
+	each node on that path
+		Which is the sum of their log(pr)s
+Maximizing the log pr of picking target word is equiv to maxing sum of log prs of all branches on the
+path to target word
+	Computationally good - means runs in O(log(N)) instead of O(N)
+		The test time is still in O(N) I think
+	For each node, we know correct branch b/c know what next word is, and know current pr of taking
+	correct branch, by comparing pred vec w/ learned vec at the node
+So we can get derivs for learning both pred vec v and that node vec u
+Test time needs to consider many words, so not just one path, so slow.
+
+
+
+A simpler way to learn feature vecs for words, by Collobert + Weston 2008:
+Use both past *and future* context. An 11-word window, 5 before and 5 after target. (This isn't primarily
+for prediction, naturally). In center of that window, put either correct word or a random word, and train
+net to give high output if correct word and low output if random word.
+
+			right or random?
+				^
+				|
+Units that learn to predict output from features of input words
+^		^			^		^
+|		|			|		|
+word code	word code		word code	word code
+^		^			^		^
+|		|			|		|
+word at t-2	word at t-1		word at t	word at t+1
+					or random word
+
+So, learns whether the middle word is appropriate in its context. Gives feature vectors that can then be
+used for a variety of NLP tasks.
+
+"t-sne" is a good method for visualizing and clustering feature vectors.

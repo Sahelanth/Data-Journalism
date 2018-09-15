@@ -1,0 +1,279 @@
+Stochastic gradient descent w/ mini-batches is most widely used NN learning algo
+
+Recall linN error surface
+	Horizontal axis for each weight, 1 vert axis for error
+	For linN w/ error^2, err surface is a quadratic bowl
+	Vert cross sections are parabolas
+	Horiz cross sections are ellipses
+Multilayer non-linear nets have more complicated error surfaces. BUT, locally a piece of a quadratic
+bowl will be good approx!
+
+Full-batch learning on a quad bowl err surf:
+	Going downhill reduces the err, but dir of steepest descent doesn't point at the minimum
+		Unless the ellipse is a circle
+		V narrow ellipse -> gradient descent is near perpendicular to dir to the mean
+			-> slow learning
+	Gradient is big across the ellipse and small thru middle of the ellipse. Big in dir we want
+	to travel a short dist and small in dir we want to travel a large dist
+		Zig-zags back and forth across long ellipse headed toward center, where long axis is error
+		and short axis is weight
+		If learning rate's too high, will diverge!
+WANT to go fast in dirs w/ small BUT CONSISTENT gradient and slow in dirs w/ big but inconsistent gradients. How?
+	Inconsistent grad = grad that reverses sign after a short distance
+
+
+Motivation for stochastic gradient descent
+If dataset is highly redundant, grad for a particular weight on 1st 1/2 of the dataset is almost the same as
+grad for that weight on the whole dataset
+So! Instead of computing grad on full data set, compute grad on a subset of the data, then update weights, then
+on remaining data compute grad for the updated weights
+	Extreme is online learning - compute grad and update weights after every training case
+
+Mini-batch of 10, 100, or 1000 is usually better than online
+	Less comp-intensive for 2 reasons
+		Less comp used updating the weights
+		Comping grad for many cases at once uses matrix-matrix multiplies, which are v efficient esp on GPUS
+
+
+Mini-batches need to be class balanced (or close)
+Otherwise weights "slosh"
+Randomizing what data you select for a minibatch is usually good way to do this
+
+2 types of NNet learning algo
+	FUll grad computed from all training cases
+	From there are clever ways, like nonlin conjugate grad, to speed up learning
+	Optimization people have long studied how to speed up smooth nonlin fcts
+	Multilayer NNs are weird to optimize, though
+For large NNs w/ v large and redundant training sets, minibatch is nearly always best
+	Often more comp eff
+	May need quite big batches to use some opti methods
+Full grad descent (ie on entire training set) does produce better estimates of grad, but minibatch is generally
+still better to use b/c comp eff
+
+
+A minibatch algo example
+Guess an initial learning rate
+	If error keeps getting worse or oscillates wildly, reduce learning rate
+	If err falls consistently but slowly, increase learning rate
+	Write a simple program to automate this
+Note that near the end of minibatch learning, nearly always helps to turn down learn rate
+	Bc removes fluctuations in the weights caused by variations in the grads of diff minibatches
+		Smooths to a final set of weights that's good for many minibatches
+Turn down the learning rate when the err stops decreasing
+	Best way to determine this is to use the err that you got on a separate validation set
+
+
+Tricks for minibatch grad descent
+
+Issue: initializing the weights
+If 2 hidden units have same bias and incoming and outgoing weights, their grads will always be the same,
+so can't learn to be different features. BReak this symmetry by initializing weights to small random values
+
+If a hidden unit has big fan-in (= many inputs to it), big weights tend to saturate it
+	Initialize w/ big weights to small fan-in units, small weights to big fan-in units
+	Best way: weights proportional to sqrt(fan-in)
+	Can also scale learning rates the same way
+
+Speed of learning can be greatly sped up by shifting the inputs - adding a constant to each component of input
+values. Best when using steepest descent.
+	Usually helps to shift each component of the input vector so that has a mean of 0 over all the training data
+	ex: neurons w1 and w2 feeding into output neuron
+		Training case 1: 101, 101 -> output 2
+		Training case 2: 101, 99 -> output 0
+		error surface is a v thin ellipse; lines which satisfy each case are nearly parallel
+		But if we subtract 100 from each input:
+		1, 1 -> 2
+		1, -1 -> 0
+		error surface is a circle, lines for each case are perpendicular. Easy to learn!
+
+Hyperbolic tangent (=2 ( logistic -1) gives hidden unit activation around mean 0, if inputs to them are
+about evenly distributed around 0
+	Hyp tan units beat log units when there aren't big fluctuations in inputs
+
+
+
+Scaling the inputs
+Good when using steepest descent
+Transform each component of the input vector so each component has typical variance of 1 or -1 over the
+whole training set
+Example: training cases
+0.1, 10 -> 2
+0, -10 -> 10
+Err surf is long parabola. Err surf has high curvature where input component is big, low curv where input
+component is small
+Scale to
+1, 1 -> 2
+1, -1 -> 0
+to get nice circular err surf
+
+Shifting and scaling inputs is simple. A more complicated method: decorrelate the input components
+	This is guaranteed to give circular err surf for a linN
+	Principal component analysis, drop princ comps w/ smallest eigenvalues
+		Then divide remaining princ comps by the sqrts of their eigenvalues
+		For a linN, this converts the elliptical err surf into circular
+Circular err surf good b/c gradient points right at minimum
+
+
+Common multilayer problems
+If start w/ high learning rate, hidden units get all v big + or v big -. The err derivs for the hidden
+units become small and err stops decreasing
+	This is a plateau where err ~0, not really a local minimum.
+For classifiers using error^2  or cross-entropy, there's another plateau problem. Best guessing strategy
+is to make each output unit always produce an output equal to the proportion of time it should be a 1.
+	Improving on this strategy reqs propagating useful info thru all the hidden layers, which
+	can take a long time if there are many and start w/ small weights
+
+TUrning down learning rate near the end is good
+	Reduces fluctuations in err that come from diff grads on diff minibatches
+	So gives slower learning if do it too soon
+
+
+4 main ways to speed up minibatch leanring
+Momentum - instead of using grad to change the POSITION of the weight "particle", use it to change
+the VELOCITY
+	Think of each weight as a ball on the err surf
+	Momentum means it "remembers" previous grads in its velocity
+
+Separate, adaptive learning rates for each parameter. SLowly adjust each param's learning rate using the
+consistency of the grad for that param. If sign of grad keeps changing, reduce learning rate; if sign of grad
+stays the same, increase learning rate.
+
+rmsprop - divide the learning rate for a weight by a running avg of the magnitudes of recent grads for
+that weight
+	So if grads are big divide by large #, if small div by small #
+
+Use "curvature information" - take a method from optimization lit, apply to NNs
+
+
+
+MOMENTUM METHOD
+Works for minibatch and full batch. V useful.
+Ball starts off following the grad, but once it has velocity, it no longer does steepest descent - its momentum
+keeps it going partly in dir of previous grad
+Also need some "viscosity" - velocity should gradually decrease so stops at minimum
+This means builds speed in dirs w/ a consistent grad, damps oscillations in dirs of high curvature
+
+Eqns:
+v(T) = alpha*v(t-1) - eta*dE/dw (t)
+v(t) is velocity at time t; alpha is momentum (aka 'attentuation factor'; set it like 0.9),
+eta*dE/dw(t) is updates of the weights
+
+delta w(t) = v(t)
+
+Behavior of momentum method:
+If err surf is a tilted plane, ball reaches a terminal velocity
+Terminal vel: v(infinity) = (1/ 1-alpha )(-eta*dE/dw)
+Can be much faster than simple grad desent
+
+Don't want too big a momentum! Initial weights are likely to suck. Start w/ momentum=alpha=0.5
+Once have small grads and weights aren't changing, smoothly raise momentum to 0.9 or 0.99
+This makes it possible to learn at a rate that'd cause oscillations if didn't use momentum
+Momentum makes learning more stable! ALlows us to use bigger learning rates
+
+Now, standard momentum method first computes grad at current location and then jumps in dir
+of [current grad combined with previous grads]
+
+Sutskever 2012 found a method via Nesterov 1982 that often works better:
+First, jump in dir of previous accumulated grads. Then, measure grad where you end up and make a correction.
+Better to gamble then correct than to correct then gamble!
+
+
+
+Separate, adaptive learning rates for each connection
+In multilayer net, appropriate learning rates for diff weights can vary a lot
+	Magnitudes of the grads often v diff in diff layers, esp if initial weights small
+
+The fan-in is another reason to want diff learning rates for diff weights
+	Simultaneously changing many incoming weights to correct same error leads to "overshoot" effects,
+	which are bigger when there's bigger fan-in
+
+Use a hand-set global learning rate multiplied by a local gain that is determined empirically for each weight.
+
+One approach:
+Start w/ local gain of 1 for every weight
+delta(wij) = -eta*gij*dE/dwij
+	gij = local gain
+
+Increase the local gain if the grad for that weight doesn't change sign
+Use small additive increases and multiplicative decreases
+Implementation: if dE/dwij (t) * dE/dwij (t-1) > 0
+then gij(t) = gij(t-1) + .05
+else gij(t) = gij(t-1)*0.95
+
+Multiplicative decrease makes sure that if oscillations start, gain will get smaller rapidly.
+
+If grad is totally random, gain stays around 1 when we increase by +amount half the time and
+multiply by (1-amount) half the time. So set a rate that keeps symmetrical, I guess?
+
+Tricks to improve adaptive learning rates:
+Cap the range, like [0.1, 10] or [.01, 100]. Huge gains lead to instability, destroy your weights.
+Use full batch learning or v big minibatches
+	Ohterwise, changes in grad sign may come from sampling error of a minibatch
+Combine w/ momentum
+	Use the agreement in sign b/w current grad and the velocity for that weight, rather than b/w
+	current grad and previous grad
+
+Momentum doesn't care a/b alignment of axes; adaptive learning rates only deal w/ axis-aligned effects
+
+
+RMSprop - divide grad by a running avg of its recent magnitude
+Is minibatch version of rprop, which is used for full batch
+Is a way to deal w/ how magnitude of grad can vary a lot, both across time in learning and b/w weights
+
+rprop: only use sign of gradient (not its actual magnitude) and adapt step size separately for each weight
+	Increase step size for a weight multiplicatively (eg times 1.2) if the signs of its last two grads
+	agree. Otherwise decrease step size (eg times 0.5)
+	Impt to decrease faster than increase to avoid oscillations
+	Limit the step sizes to under 50 and over a millionth. Limits should depend on problem - 
+	v often a narrower range is better
+
+
+Why doesn't rprop itself work w/ minibatches?
+	Idea of stochastic grad descent is that when learning rate is small, it avgs the grads over
+	successive minibatches
+	Consider a weight w/ grad of +0.1 on 9 MBs and -0.9 on 10th MB. This weight is fine! Should stay
+	roughly where it is. But since rprop ignores magnitude, it will increment weight 9x and decrement
+	it once by same amt, making it much larger
+
+rprop is equiv to using the grad but also dividing by the size of the grad. Works for full batch but not for
+MB b/c would divide by a diff # for each batch
+rmsprop evens that out by dividing by a moving avg of the grad^2 for each weight
+e.g.
+MeanSquare(w,t) = 0.9*MeanSquare(w, t-1) + 0.1(dE/dw(t) )^2
+Dividing the grad by sqrt(MeanSquare(w,t)) makes learning much better!
+
+Combining rmsprop w/ Nesterov momentum works well
+	Best if divide the *correction* by RMS of recent grads, rather than dividing *jump* by that
+Little investigation of how combines w/ adaptive learning rates
+
+Yann LeCun group's "No more pesky learning rates" relates to rmsprop
+
+
+SUMMARY OF LEARNING METHODS FOR NNs
+For small (~10k cases) data, or bigger dataset w/ little redundancy, use a full-batch method
+	Methods include conjugate gradient, LBFGS
+	COuld use adaptive learning rates, rprop
+
+For big redundant datasets, use minibatches
+	Start w/ grad descent w/ momentum, w/ a single (but maybe adaptive) global learning rate
+	Next try rmsprop - easy to implement w/o momentum, can add momentum or other
+	Finally, try whatever Yann LeCun has published latest
+Why no simple recipe? NNs differ a lot
+	V deep nets, esp ones w/ narrow bottlenecks, are hard to optimize. Need methods that are sensitive
+	to v small grads
+	RNNs hard, esp if want them to notice things far in the past
+	Wide shallow nets can be optimized w/ methods that aren't v accurate b/c tend to stop before overfitting
+Tasks differ a lot! Some req v acc weights, some don't. Some have many v rare cases - like words and
+unlike pixels.
+
+
+
+
+
+
+
+
+
+
+
+

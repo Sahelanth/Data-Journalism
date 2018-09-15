@@ -1,0 +1,258 @@
+HOPFIELD NETS AND BOLTZMANN MACHINES
+
+
+Hopfield nets store memories as distrib patterns of activity. Sometimes called "energy basin nets"
+
+Hopfield net: binary threshold units w/ recurrent conns b/w them
+Recurrent nets of nonlin units are hard to analyze. Can oscillate, settle to stable state, or follow
+chaotic trajectory
+	But if the conns are SYMMETRIC, there is a global energy fct you can analyze
+	Each binary "configuration" of the whole net has an energy
+		Binary config - an assignment of binary values to neurons in the net
+	Binary threshold decision rule makes net settle to a min of this global energy fct
+Global energy fct is sum of contributions. Each contrib depends on *one conn weight* and binary states
+of *two* neurons
+
+Energy = - [sum over i] si*bi  - [sum for i less than j] si*sj * wij
+	bi = bias term, only depends on state of one unit, not both
+	Other term depends on activities of both i and j, and on wij the symmetric conn b/w i and j
+	neg signs b/c want to min energy
+This energy fct is quadratic (so not hard to compute), and lets each unit compute locally how its state 
+affects the global energy.
+"Energy gap" for unit i - diff in global energy depending on whether a unit i is on or off
+Energy gap = deltaEi = E(Si=0) - E(Si=1) = bi + [sum over j] sj*wij
+	Energy when i is off minus energy when i is on
+	So, just get eqn for a binary threshold decision unit!
+
+To settle to energy min in a Hopfield net, start from a random state, then update units *one at a time*
+in a random order
+	For each unit, compute contribution of each of its two possible states to global energy,
+	then set that unit to state that gives lower global energy
+		This is equiv to saying "use binary thresh units"
+	The decisions need to be sequential bc if make simultaneous updates the energy can go up. This
+	leads to oscillations w/ period 2 (bouncing b/w up state and down state) rather than settling
+	to a min
+		However, if do updates that are simultaneous but randomize which units are updated at
+		each step, can usually destroy oscillations
+
+Point of Hopfield nets is to store memories
+Binary thresh decision rule can error-correct incomplete or corrupted memories
+	Can access an item just by knowing part of its content: you set the states of some of the units,
+	leave others random, and wait for it to settle to local min. This implemements content-addressable
+	memory - the states you know at the start are the content you're using to reconstruct the full
+	memory
+Robust vs hardware damage - can still reconstruct if lose a few units
+
+So, above we learned how to access memories (apply binary thresh rule unit hit local min).
+How do we store memories?
+If we use activities of 1 and -1, we can store a binary state vec by incrementing the weight b/w any
+two units by the product of their activities
+i.e. set deltawij = si*sj
+	Only reqs 1 pass thru the data, so can do online learning. But means no error correcting codes
+	while storing, so not the most efficient way to store.
+If we use activities of 0 and 1, a slightly more complicated rule works:
+	deltawij = 4(si - 0.5)(sj - 0.5)
+
+DEALING W/ SPURIOUS MINIMA
+Hopfiel nets are limited by spurious memories that appear when 2 nearby minima combine into a new and
+unintended minimum. Learning how to fix this led to a learning rule that's good for more complicated
+things than Hopfield nets.
+
+The storage capacity of a fully connected Hopfield net w/ N units is ~0.15N memories
+	Beyond that, diff minima start getting confused w/ each other
+	At N bits per memory, capacity is only 0.15N^2 bits
+		This is not v efficient. How efficiently could we ideally do?
+		N^2 weights and biases in the net. After storing M memories, each conn weight is an
+		integer in range [-M, M]
+		So number of bits on the computer needed to store the weights and biases is 
+		(N^2)log(2M+1)
+			Scales logarithmically w/ M, which is better than scaling constantly w/ 0.15
+Spurious minima are what limits the capacity
+	Each time we memorize a config, we hope to create a new energy min.
+	If 2 minima are nearby, they merge into a diff minimum intermediate to those 2, losing both
+Note that state space of a Hopfield net is corners of a hypercube
+
+
+A way to avoid spurious minima - "unlearning"
+Start the net in a random initial state, let it settle to some local min, then apply the
+storage rule IN REVERSE
+	This gets rid of deep spurious minima and increases memory capacity
+	(Crick + Mitchison speculated that this is what dreams are - going to deep minimums and then
+	unlearning them, to get rid of spurious mins)
+How much unlearnig should we do? We want to derive unlearning as the right way to min some cost fct
+
+Elizabeth Gardiner worked out a diff storage rule that uses full capacity of the weights.
+Instead of trying to store vectors in one shot, cycle thru training set many times. Use the perceptron
+convergence procedure to train each unit to have correct state GIVEN states of all the other units in
+the global vector we want to store.
+	Put net into memory state you want to store, then take each unit separately and ask whether it
+	will go into the state you want given weights of all incoming units. If yes leave weights alone,
+	if no change the incoming weights as per perceptron convergence procedure. (Those will be integer
+	changes to the weights)
+	May have to repeat this several times, and if you're trying to store too many memories it won't
+	converge. (Remember, p.tron only converges if there IS a set of weights that is correct for all
+	cases, and there may not be!)
+	This technique is much like one called "pseduo-likelihood" - get one thing right given all the
+	other things
+		A good way to model high-dim data is to try to get one dim right GIVEN all the other dims
+		Except in Hop net weights are symm, so need to get 2 sets of grads for each weight and
+		avg them.
+
+
+HOPFIELD NETS W/ HID UNITS
+We try to make states of hids rep an interpretation of the perceptron input on the visible units
+
+WEights b/w units are constraints on interpretations; a low-energy state is a good interpretation of
+the input. Use net to construct interp rather than to build memories. Input rep'd by state of input units,
+interp by state of hids
+The energy is how bad the interp is. Minimize energy.
+
+Example: input 2D lines, interp to edges of a 3D image. Each 2D line input unit excites mult hidden units
+that try to rep what 3D line it could be, which recur to compete till only one 3D edge interpretation
+unit stays on
+	And have conns bw hids to make 3D edge interps that make sense together reinforce each other
+	Can add stronger conns bw more likely hids, like two that together indicate a right angle
+Necker cube would have 2 energy minima w/ v similar energy
+
+Poor local energy minima rep suboptimal interps
+How do we deal w those? How do we learn good hid-hid weights that support good interps?
+
+Adding noise can help escape local mins
+Best strat: start w/ lots of noise so can explore the space, then slowly reduce noise to drill down into
+deep min. This is called "simulated annealing"
+So, instead of just binary units, use stochastic binary units, which turn on w/ pr:
+	p(si=1) = 1/(1+ e^-deltaEi/T)
+	T, "temperature", controls the amt of noise. Scales the energy gap. High temp is equiv to
+	decreasing all energy gaps b/w configs. T=0 returns it to being a deterministic binary unit,
+	i.e. unit where p(si=1)=1
+
+Boltzmann machines DON'T do sim annealing - use stochastic binary units where T is fixed at 1
+rather than changing
+
+Thermal equilibrium is impt to get. Equil does NOT mean it's in lowest energy config yet!
+Rather, means that the PR DISTRIB over configs is a stationary distrib
+	Pr of any config is proportional to e^energy of that config, when distrib is stationary
+
+W/ symm conns, repeatedly appply our stochastic update rule until the *fraction of systems* in each
+config stays constant. That's thermal equil. (I think the idea is to make many copies of the net
+and check updating them all?)
+
+
+TO CALCULATE ENERGY FOR A CONFIG IN A BOLTZMANN MACHINE:
+E = -[sum over i] (si*bi)   - [sum over i < j] si*sj*wij
+
+
+BOLTZMANN MACHINES
+B. machines are stochastic Hopfield nets w/ hidden layers
+Are good at modeling binary vectors. Given a training set of bi vs, fit a model that assigns a pr to
+every possible bi v.
+	Good for deciding if other bi vs come from same distrib. e.g. make a bi feature vec for a document
+	of what words do/ do not occur in it 0/1.
+ 		Same kinds of docs will have similar word appearances
+	Good for anomaly detection in complex systems - monitor for unusual state, w/ NO previous examples,
+	by having a model w/ distrib of normal states
+	Good for making models of several diff distribs, compute post pr that a particular distrib
+	produced the observed data.
+		p(model i | Data) = p(data | model i) / [sum over j] p(data | modej j)
+
+2 ways to produce models of data:
+1. Generate states of some latent variables, then use states of the latent vars to gen binary vector
+
+How a causal model generates data: we use 2 sequential steps
+	First, pick HIDDEN STATES from their prior distrib. (Often this is based just on bias term,
+	not a full distrib).
+	Then, pick the VISIBLE STATES form their *conditional distrib given the hidden states*
+		Often, we use log u hids, biases on hids and weights on hid-visible conns to assign
+		a pr to every possible visible vector
+	Compute pr of generating a specific visible vector v by summing over all possible hidden states:
+		p(v) = [sum over h] p(h) * p(v|h)
+	Each hidden state is a possible explanation of v.
+	Factor analysis is a causal model.
+
+2. A Boltz machine, however, is an energy-based model, NOT a causal generative model.
+	In B. machine, everything is defined in terms of the energies of joint configs of the visible
+	and hid units
+	The energies of joint configs relate to their probabilities in two ways:
+	1) p(v, h) is proportional to e^-E(v, h)
+		pr or a joint config of vis and hids is prop to e^-energy of that joint config
+	2) Or, can define p(v, h) as the pr of finding the net in state (v, h) after have updated all
+	the stochastic binary units enough times to reach thermal equil
+	These 2 defs are equiv
+
+Energy of a joint config:
+-E(v,h) = [sum over all i visible units]vi*bi + [sum over all k hidden units] hk*bk + 
+	     [sum over i<j] vi*vj*wij + [sum over i,k] vi*hk*wik + [sum over k<l] hk*hl*wl
+	
+	-E(v,h) is energy w/ config v on vis us and config h on hid us
+	vi = binary state of unit i in config of visible units v
+	bk = bias of hid u k
+	Point of [sum over i<j] is to count every non-identical pair of i and j once
+		This term is the visible-visible interactions
+		Avoids double-counting
+	wik = weight bw vis u i and hid u k
+		vis-hid interactions term
+	Last term is hid-hid interactions term
+
+Using energies to define prs: the pr of a joint config depends on energy of that joint config compared
+w/ energy of all other joint configs.
+
+p(v,h) = ( e^-E(v,h) ) / [sum over u,g]( e^-E(u,g) )
+	Normalizing by [sum over u,g]( e^-E(u,g), the sum of all possible configs over vis and hids
+	[sum over u,g]( e^-E(u,g) is called "partition function" by physicists, and it grows
+	exponentially w/ # of configs
+
+The pr of a config of vis us is sum of prs of all the joint configs that contain that vis config
+
+	p(v) = [sum over h](e^-E(v,h)) / [sum over u,g](e^-E(u,g))
+		Normalizing by same partition fct as before
+
+Example: net w/ 2 hids and 2 visible units
+	    -1			weights wh1,v1 = +2 ; vh2,v2 = +1 ; wh1,h2 = -1
+	h1 <--> h2
+      +2|        |+1
+ 	V	 V
+	v1	 v2
+
+v1 has states 0 or 1, so does v2. 4 possible states of vis us - (0,0), (1,1), (0,1), (1,0). 4 possible
+states of hid us - same. So, 16 possible joint states - v(0,1) h(0,1), etc
+Compute -E in all 16 configs
+Then compute e^-E for each
+Then compute p(v, h) from that, sums to 1
+Then compute p(v) from that, getting the prs of each visible config for a B. machine w/ that arch
+and those 3 weights.
+
+
+It's obvious that for big B machines, # of configs goes up exponentially. So have to sample rather than
+computing everything.
+	W/ more than a few hids, partition fct gets too many terms to reasonably compute
+So, MCMC! Start w/ a random global config, pick units at random, let them stochastically update their
+states based on their energy gaps.
+	Run the Markov chain till reaches stationary distrib (= therm equil w/ temperature 1)
+	Then, the pr of a global config relates to its energy by the Boltzmann distrib:
+		p(v,h) is proportional to e^-E(v,h)
+
+It turns out that for learning, we'll also need to sample the posterior distrib over hid configs
+for a given data vector.
+	This is just like sampling from the model described above, EXCEPT hold the state of vis us fixed,
+	only let the hids update
+	Need samples from posterior to learn the weights
+		Each hid config is explanation of an observed vis config
+		Better expls have lower energy
+
+Handy equations:
+https://www.coursera.org/learn/neural-networks/discussions/forums/gGG4zpJsEeauXQruKvBx4A/threads/pW_xk5zaEee-rg5vRL6X_g
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

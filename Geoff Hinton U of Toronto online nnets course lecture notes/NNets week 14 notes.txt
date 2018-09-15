@@ -1,0 +1,320 @@
+Change in log prob of vis vector 0 wrt weight 0->0 is 
+	expected value of hidj at 0 times (visi at 0 minus estimate of visi at 0)
+
+
+
+Do unsup "pre-training" to get better results than sup learning can get alone (by learning feature
+detectors in advance)
+
+
+Just as a RNN is equiv to an FF net w/ a layer for each timestep,
+an RBM is equiv to a certain infinitely deep sigmoid belief net
+	A top-down pass of this "infinite directed net" is equiv to letting RBM settle to equil
+	
+
+
+A diff way of learning sigmoid belief nets arises thru equivalence to RBMs
+	Can stack many RBMs to learn layers of nonlin features. This is NOT equiv to a non-restricted BM - it is
+	in fact a deep SBN! Big stack of undirected graphical models turns out to be equiv to a deep directed
+	graphical model.
+So, approach: first, train a layer of features that receive input from the pixels. Then treat the activities
+of trained features as input to the next RBM, which'll learn features of those features.
+It can be proved that each time we add another layer of features, we improve a variational lower bound on the log pr
+of generating the training data.
+A stack of 2 or more RBMs is a Deep Belief Net.
+
+	[[[[[h2]]]]]------------
+		^		|
+		|W2		|This is RBM2
+		V		|
+	[[[[[h1]]]]]------------|
+		^
+		| copy features, treat them as input. Copy binary state for each visible unit v
+	[[[[[h1]]]]]]------------
+		^		|
+		|W1		|This is RBM1
+		V		|
+	[[[[[v]]]]]]------------|
+
+
+Interestingly, initializing with same # of units in h2 as in v, and W2 as the transpose of W1, gives good results.
+When do this, RBM2 is basically just RBM1 upside down - starts off as a good model of RBM1.
+
+So, compose that structure above into a single DBN model:
+	  [[[h2]]]--------------
+		^		|
+		|W2		|This part is an undirected model with symmetric connections
+		V		|
+	[[[[[h1]]]]]------------|-------|
+		|			|
+		|W1			|This part is a directed model like an SBN
+		V			|
+	  [[[v]]]]----------------------|
+
+
+Resulting combined model is NOT a Boltzmann Machine bc conns not symm. Lower layers are like SBN, upper layers are like RBM.
+
+W/ 3 layers:
+	    [[[h3]]]------------
+		^		|
+		|W3		|RBM
+		V		|
+	[[[[[h2]]]]]--------------------		
+	  ^	|W2			|
+	  |R2	V			|
+	[[[[[h1]]]]]			|			
+	  ^	|W1			|
+	  |R1	V			|
+	[[[[[data]]]]]]-----------------|
+
+To generate data from this model:
+
+Go back and forth b/w h2 and h3 until reach equil. (Do alternating Gibbs sampling, update all units in h3
+in parallel, then all in h2, then all in h3...) until get an equil sample from this RBM. This defines a
+prior distrib over h2. Then use the generative conns W2 from h2 to h1 once.
+Then use the generative conns w/ weights W1 from h1 once, to generate sample data
+
+The non-symm bottom-up conns are NOT part of the generative model. They're just used for inference, and their weights
+are the transpose of the weight matrix of the top-down generative weights.
+
+Side note: avg of 2 factorial distribs is not a factorial distrib.
+	In an RBM, the posterior over 4 hids is factorial for each visible vector. 
+	e.g. for a given vis vec v1, the post for the hids is 0.9 that h1 on, 0.9 h2 on, 0.1 h3 on, 0.1 h4 on.
+		The pr that h1 and h2 are both on is 0.81 - so this is a factorial distrib
+		Now, if post for vis vec v2 is 0.1, 0.1, 0.9, 0.9, the avg distrib for v1 and v2 is
+		0.5, 0.5, 0.5, 0.5, which is NOT a factorial distrib (e.g. p(1,1,0,0)) in the post for
+		v1 is 0.9^4 = 0.43 for v2 0.1^4 = 0.0001, in aggregated post 0.215.
+
+
+WHY DOES GREEDY LEARNING WORK?
+Why does stacking RBMs that try to model each other work?
+
+The weights W in the bottom RBM define many diff distribs p(v|h), p(h|v), p(h), p(v)
+	We use p(v|h) and p(h|v) to do Gibbs sampling, and once that's given us an equil sample we get sample from
+	the joint distrib p(v,h). So the weights also define the joint distrib (both that way and in the e^-E(v,h),
+	but that eqn can't be computed for big nets)
+	p(v,h) lets us determine prior distrib over h defined by this RBM. Also the prior distrib over v defined by
+	this RBM.
+
+	We can express the RBM model as:
+	p(v) = [sum over h] p(h)*p(v|h)
+		prob of a vis vec is sum over all hid vecs of p(hidden vec)*p(v|h)
+
+If we learn a better model of p(h), we improve our model of p(v). Our model of p(v) = a prior over h that fits the
+agreggated post better. 
+So, the point of stacking RBMs is to build a better model of the aggregated post over hids produced
+by applying transpose of W to the data.
+
+Once we've learned a stack of RBMs and combined them to be a deep belief net, we can then fine-tune the whole model
+using a version of the wake-sleep algo.
+	We learn many layers of features RBM-style, then finetune to improve both the bottom-up recog weights and
+	the top-down generative weights to get a better generative model.
+
+1. Do a stochastic bottom-up pass
+Then adjust the top-down weights of lower layers to be good at reconstructing feature activities in layer below
+- same as in a standard wake-sleep algo.
+(This is the wake phase)
+
+2. Do a few iterations of Gibbs sampling in the top-level RBM. Then adjust the weights in that RBM using contrastive
+divergence - same as in standard RBM learning.
+	Update weights using diff bw correlations when activity first got to that RBM, and corrs after a few
+	iterations of that RBM.
+
+3. Take vis units of the top level RBM and do a stochastic top-down pass using the directed lower connections (i.e.
+acting as a sigmoid belief net). Generate data from this SBN, then adjust the bottom-up weights to be good at
+(This is the sleep phase)
+
+Diff from standard wake-sleep is that the two-level RBM acts as a much better prior over the top layers than just a
+single layer as in an SBN would.
+
+Also, rather than generating data by sampling from the prior, we're looking at a training case, going up to top RBM,
+and running a few iterations before we gen.
+
+
+
+Example: MNIST data and labels. Model joint distrib of MNIST digits and their labels using a DBN.
+
+500 units
+^	|		learn this RBM unsup
+|	V
+28x28 pixel image	
+
+Then we'll treat the activity in those 500 hids as input for another RBM to model:
+
+500 units
+^	|		Learn the 1st 2 hid layers w/o using labels.
+|	V
+500 units
+^	|		
+|	V
+28x28 pixel image
+
+
+Then we add a big top layer and also feed it the labels:
+
+  2000 units   }- learn to model the concatentation of the label softmax unit w/ the 500 feature activities from the layer below
+^	    ^
+|	    |
+V	    V
+10 labels   500 units
+(1 softmax)   ^	      |		
+              |	      V
+              500 units
+	      ^	      |		
+              |	      V
+	  28x28 pixel image
+
+Learn the top layer as an RBM for modeling the labels concatenated w/ the features in the 2nd hid layer.
+
+Then fine-tune the weights using contrastive wake-sleep to make a better generative model.
+
+
+DISCRIMINATIVE FINE-TUNING FOR DBNs
+
+Before we discussed fine-tuning DBN to be better at generation. Now we're gonna discuss fine-tuning to be better
+at discriminating classes.
+	This works v well, and is big part of nnet resurgence esp in speech recog.
+
+First, learn one layer at a time by stacking RBMs.
+Treat this as "pre-training" that finds a good initial set of weights which can then be fine-tuned by a local
+search procedure
+	Contrastive wake-sleep fine-tunes for better GENERATION
+	Backprop fine-tunes for better DISCRIMINATION.
+
+The unsup pre-training overcomes many limits of standard backprop. Makes it easier to learn deep nets, and makes
+the nets generalize better.
+
+Why backprop works better w/ greedy pre-training: 2 effects one on optimization one on generalization
+Greedily learning 1 layer at a time scales well to really big nets, esp if we have locality in each layer.
+(e.g. in vision problems, local receptive fields in each layer -> not much interaction b/w widely separate 
+locations -> easy to learn a big layer in parallel)
+	We don't start backprop until we already have sensible feature detectors. So the initial grads will be sensible,
+	and the backprop only needs to perform a LOCAL search - it starts at a pretty good starting point
+Less overfitting/ better generalization bc most of the info in the final weights comes from modeling the distrib
+of input vecs. The input vecs generally contain a lot more info than the labels - a label should contain only
+a few bits of info.
+So, make feature detectors using the input, use the labels only for fine-tuning.
+	The fine-tuning doesn't have to discover features from scratch, just tweak the features to get category
+	boundaries in right place.
+	This kind of backprop works well even if MOST of the training data is unlabeled! The unlabeled data is still
+	v useful for discovering good features.
+
+The top two levels RBMs' energy landscape models low dim manifolds of the digits.
+
+For digit discrimination, add a 10-way softmax above the top-level RBM and do backprop.
+
+What happens during discriminative fine-tuning (after pre-training as stack of RBMs)?
+	Weights in lower layers barely change - but those changes make big diff in classification performance
+	Pre-training makes deeper nets more effective than shallower ones; w/o pre-training, often the reverse is true
+
+Pre-training leads to final models more similar to each other than no pre-training would. No p-t leads to models that
+can settle into v diff local minima. P-t leads to qualitatively diff kids of solns than just starting w/ small
+random weights does.
+
+
+USING RBMs TO MODEL REAL-VALUED DATA
+Instead of stoch binary vis us, use linear us w/ Gaussian noise. To learn these well, need to make the hids RELUs.
+
+e.g., consider images where pixels can have grayscale values rather than black/ white.
+	We CAN rep these using stoch binary vis us, by setting the pr that the u turns on based on the pixel value.
+	This doesn't work well for "real images" (I think he means images of scenes rather than digits), bc in real
+	images the intensity of a pixel is almost always almost exactly the avg of the neighboring pixels.
+		I presume edges are the exception
+		Can't rep precise intermediate values using mean-field logistic units. Can't rep smthng like
+		"intensity is v likely to be 0.79 but v unlikely to be 0.81"
+
+So, use linear us w/ Gaussian noise. Model pixels as Gaussian vars. Alternating Gibbs sampling is still easy, tho will
+blow up unless you use a much smaller learning rate than you'd use for stoch bi us.
+	RBM energy w/ linear Gaussian us:
+
+E(v,h) = [sum over i in vis] (vi-bi)^2 / 2sigmai^2   - [sm over j in hid]bj*hj    -   [sum over i,j] (vi/sigmai) *hj*wij
+
+sigmai is std dev of vis unit
+First sum is "parabolic containment fct". Keeps values close to bi w/	a square penalty, prevents explosion
+Last sum is vis-hid interaction. Deriv wrt wj is a constant. Linear contrib to the energy, shifting mean
+away from bi by an amt that depends on slope.
+
+It's hard to make these work bc it's hard to learn variances for the vis us bc:
+
+	   j	hid layer
+ 	  ^ |
+wij/sigmai| |sigmai*wij
+	  | V
+	   i    vis layer
+
+When sigmai (the std dev of vis unit) is much less than 1, the bottom-up effects are too big and the top-down effects
+are too small. This conflict leads hids to saturate, becoming either always-on or always-off. And that fucks up learning.
+
+Soln: when sigma is small, need many more hids than vis. That allows small weights to produce big top-down effects.
+	But optimal ratio of hid:vis changes as sigma does. How do we cope w/ that?
+	tldr RELUs. First, a precursor that motivated them them.
+
+Stepped sigmoid units: a neat way to implement integer values.
+	Make many copies of a stoch bi u. All copies have same weights and same adaptive bias b - BUT, they have diff
+	fixed offsets to the bias
+	So you set a global bias b that adapts, but then the 1st u's bias is (b-0.5), 2nd u's (b-1.5), 3rd's (b-2.5) etc
+	So you get a diff NUMBER OF COPIES turning on at each step of 1 away, as x increases
+	As sigma decreases, # of copies turned on increases.
+	So, we get more top-down effect when sigma is smaller, so small sigma won't fuck up learning!
+Using stepped sigmoid units is expensive, bc need to apply logistic fct to every copy.
+So what we do instead now is a faster approx:
+
+<y> = [sum from n=1 to infinity] logistic fct of(x+0.5-n)   (this is stepped sigmoid fct)
+    ~= log(1+e^x)
+    ~= max(0, x+noise)     (i.e. 0 when x is neg, x if x is pos, w/ some noise)
+
+max(0, x+noise) is to stepped sigmoid us what RELU is to sigmoid us - an approx that is 0 for part and a linear fct for part.
+	In fact, this IS RELU
+Contrastive divergence learning works well for sum of stoch log us w/ offset biases. (i.e., for what we described and
+approx'd above). In this case, the noise variance = the logistic fct of the output of that sum.
+	Also works for RELUs, which are much faster to compute than sum of many log us w/ offset biases - in other words,
+	CD learning does work well for the approx.
+
+A useful property of RELUs: if their bias is 0, they have "scale equivariance."
+	If you multiply all pixel intensities by a scalar a, then the RELU representation of the us also gets
+	multiplied by a.
+	R(ax) = aR(x)	all the ratios stay the same
+	So, auto-compensates for brightness changes in images!
+	R(a+b) != R(a) + R(b)	RELUs are nonlinear
+Convnets give us equivariance to translation, RELUs give us equivariance to scale.
+	R(shift(x)) = shift(R(x))
+
+The rep of a shifted image is just a shifted version of rep of original image! And that's why convnets are awesome
+
+
+On the equivalence of RBMs to SBNs: an RBM is an infinitely deep SBN with weight-sharing.
+
+The Markov chain we run to sample from equil distrib of RBM is a finite SBN.
+
+Why infinite SBN works: the vi above each hi-1 implements a COMPLEMENTARY PRIOR that exactly cancels out the effects
+of explaining away. (Pos corrs in comp prior, explaining away creates neg corrs)
+
+
+	...
+	 |
+	 V
+[[[[[[[[h1]]]]]]]]
+	 |w
+	 V
+     [[i[v1]]]
+      _|wT
+     |  | 
+[[[[[k[[j[h0]]]]]]
+     |__|w
+       |
+    [[[i[v0]]]]
+
+
+The vars in h0 are indep of each other given v0
+Infer by multiplying v0 by w^T (=transpose of the weight vector in the layer above) to get the product of the
+likelihood term and the prior term.
+So, the comp prior means we get an unbiased prior in each level
+Special case where inference is as easy as generation.
+
+
+Reason for SBN-RBM equivalence - SBN weight update rule (learning rule) when there is weight sharing across layers leads
+to one of those towers, where all but first and last terms cancel out, leaving you with the RBM learning rule.
+
+
+
+

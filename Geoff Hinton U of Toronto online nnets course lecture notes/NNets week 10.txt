@@ -1,0 +1,282 @@
+WHY IT HELPS TO COMIBNE MODELS
+
+Can improve tradeoff b/w fitting true and not fitting spurious
+Avg can do better than any single model
+Helps most when the models make v diff preds!
+
+For regression, can decompose error^2 into bias and variance
+	Bias = poorly approxing true fct. Big if model has too little capacity
+	Variance = fitting sampling error. Big if too much capacity
+
+We can avg away the variance - use mix of high cap models (whose biases avg out?)
+
+If individual predictors disagree a lot, the combined predictor tends to be better when we avg over
+test cases
+	So try to make individual predictors accurate but disagreeing w/ each other!
+
+WHY COMBINING MODELS REDUCES VARIANCE
+Let's compare the expected error^2 of two approaches: picking a predictor at random vs using avg of 
+all the predictors
+
+Where yi is output of an indiv predictor, define ybar as avg of all indiv outputs:
+
+ybar = (1/N) * [sum from i to N] of yi = [expectation over i of] yi
+
+[expectation over i of] (t - yi)^2 = [expectation over i of] ( (t - ybar) - (yi - ybar) )^2
+	[expectation over i of] (t - yi)^2 = expected error^2 of individual output
+	= (t - ybar)^2 + [expectation over i] of (yi - ybar)^2 - 2(t - ybar) * [expectation over i of] (yi - ybar)
+		(y - ybar)^2 is the expected error of avg output
+		The 2(t - ybar)*expectation term disappears bc is multiplying 2 things that are 0-mean
+		and uncorrelated, and therefore tends to go to 0
+
+So expected error^2 of avg of models is:
+(t - ybar)^2 + [expectation over i of] (yi - ybar)^2
+
+(Expected error^2 of an individual model) is greater than (error^2 of avg model) by the variance of the models
+
+An illustration:
+
+_______________			( (ybar - error)^2 + (ybar + error)^2)/2 = ybar^2 + error^2
+ |   |   |    |
+ t   y1  ybar y2
+
+Predictors that are further than avg from t make bigger than avg error^2s.
+	Predictors that are nearer than avg to t make smaller than avg error^2s
+	So, avging before compare error^2s to target gets closer to target?
+
+
+This works w/ error^2 and Gaussian distrib of error! May not work if diff cost fct and error distrib
+e.g. discrete distribs over class models:
+Suppose one model gives pr pi of correct label, and other model gives pr pj
+	Better to pick one model, or to avg them?
+	log( pi+pj / 2) >= ( log(pi) + log(pj) )/2
+	This is due to shape of log fct; on a graph w/ y=logp and x=p,  avg of two points on the curve
+	will be below the curve
+	So, avg will be worse than one pr, and not better than either pr
+So, model avging is good for regression, not classification
+
+
+HOW CAN WE MAKE PREDICTORS DIFFER?
+Hope learning algo gets stuck in diff local optima (dubious but can work)
+Use many diff models - throw in a random forest, not just some nnets! Gaussian Process models, SVMs, etc
+
+Make nnet models diff from each other w/ diff numbers and types of unit, diff # of hid layers, diff types
+of strs of weight penalty (L1, L2, early stopping), diff learning algos (full vs minibatch)
+
+BAGGING - make models differ by training diff models on diff subsets of the data
+	Make subsets by sampling w/ replacement
+	Random forests ARE decision trees trained using bagging!
+Bagging w/ nnets is very expensive and takes long for online learning
+
+Instead, use BOOSTING
+	Train a sequence of low-capacity models
+	Weight training case differently for each model you train - increase weight on cases previous model
+	got wrong, so focuses on modeling tricky cases
+
+MIXTURES OF EXPERTS differs from boosting in that in mix of experts, weight diff models differently on
+diff training cases in the final result, not just during training
+	i.e. mix of experts decides which model to rely on for a give input
+Key idea: specialization. Make each model get better at the cases it's already better at.
+
+Very local model: "nearest neighbors:
+	e.g. a step function, where assign any test case to the same category as nearest training case
+Contrast w/ polynomial, which is a "fully global" odel
+It's v fast to fit a local model - just store training cases. But obviously lack of smoothness often causes
+trouble.
+Global models are slow to fit, and often unstable - small changes to data can cause big changes to fit bc
+each param relies on all the data.
+
+Instead of single global or many local models, can use several models of intermediate complexity
+	Good if dataset contains diff regimes - areas w/ diff relationships b/w input and output
+To partition the data into regimes, need to cluster the training data into subsets, one for each local model
+	NOT clusters of similar input vectors. Clusters of similar input-> output mappings
+		Like, points that follow a given parabola, not just points that are close together
+
+There are error fcts that encourage models to coop, and err fcts that encourage models to compete
+
+To encourage coop: compare avg of all the predictor outputs w/ target train to reduce discrepancy
+	Error = (t - [expectation over i of] yi )^2
+		expectation over i of yi is the avg of all predictors
+	This can overfit badly! Makes the avgd model much more powerful than the individual models,
+	bc they learn to cancel out each others' errors
+Example:
+____________
+|    |    |
+yi   t    ybar-1
+	ybar-1 = avg output of all *other* predictors
+	Improving ybar-1 means moving yi further *away* from the target! So if a case like this happens,
+	we get trouble
+
+To encourage specialization: compare each predictor SEPARATELY w/ the target, and use a "manager" to
+decide a pr of picking each expert on a given case.
+	Error = [expectation over i of] pi*(t - yi)^2
+		pi = pr of manager picking expert i for this case
+	When try to min this err fct, most experts end up ignoring most cases and doing v well on a few cases each
+
+So, mix of experts archi:
+Cost fct: Error = E = [sum over i] pi*(t - yi)^2       later will cover a better possible cost fct based on a mixture model
+
+Manager:
+
+  ^     ^      ^
+p1|   p2|    p3|             y1     y2         y3
+ u1    u2     u3             |      |          |
+software gating network    expert2  expert1    expert3
+      ^                      |    __|          |
+      |______________________input_____________|
+
+
+Manager can have mult layers. Last layer of manager is a softmax that outputs as many prs as there are
+output options (and there's one output option for each expert). We use the prs it outputs to decide
+which output option to use
+
+Cost fct E = [sum over i] pi(ti - yi)^2
+	pi = (e^xi) / ( [sum over j](e^xj) )
+
+Error deriv for each expert: dE/dyi = pi(t - yi)
+	=pr of picking that expert times diff b/w that expert's output and the target
+	So, if manager decides should rarely use that expert for a particular case, its err deriv gets
+	smaller *on that training case*, and so that expert will not respond to that case much, saving
+	its parameters for cases where manager uses it more often
+
+Can also take deriv wrt logit that goes into the softmax, xi:
+	dE/dxi = pi( (t-yi)^2 - E)
+		= pr of using that expert times (diff bw error^2 made by that expert and avg over
+		  all experts when use the weighting provided by the manager)
+
+We want to raise p for all experts that give less than the avg error^2 of all experts (weighted by p),
+and lower p for experts that do wrose than avg error^2
+
+
+A better cost fct: justification involes mixture models. Think of each expert as making a prediction that
+is a Gaussian w/ mean = its output and variance = 1
+	Manager than decides on a scale (aka a mixing proportion) for those Gaussians, leading to a distrib
+	that has a peak bw the two original peaks and more density over where the larger-scaled Gaussian was
+Pr of the target under a mixture of Gaussians:
+p(t^C | MoE) = [sum over i] pi^C * (1/sqrt 2pi ) * e^-(1/2)(t^C - yi^C)^2
+	p(t^C | MoE) is pr of target value on case C given the mixture
+	pi^C is mixing proportion assigned to expert i for case C by the gating network (= by the manager)
+	yi^C = output of expert i on case c
+	(1/sqrt 2pi) = normalization term for Gaussian w/ variance =1
+
+Our cost fct wil be -logp(t^C | MoE)
+
+
+FULL BAYESIAN LEARNING - technique where don't try to find single best setting of params (as in MAP), but
+instead compute full posterior distrib over all possible parameter settings
+
+So for every possible setting we want a posterior pr density, and we want all those densities to add up to 1
+Obv v expensive to compute
+To make predictions, let each diff setting of the params make its own pred, then combine all preds,
+weighting each by post pr of that particular parameter setting
+	Also super expensive
+When is this a good idea? When we wat to use a complex model w/ a small amt of data
+	Avoid overfitting by not choosing a single setting of the params!
+
+We wanna learn a distrib P(Weights|Data)
+	Maximum likelihood learns a W that maxes P(D|W)
+
+Full post distrib can give vague but close-to-sensible predictions
+
+Approxing full Bayesian learning:
+If only a few params, can make a grid over the param space and eval p(W|D) at each grid-point
+	Works better than max lik or MAP when posterior is vague or multimodal. So, when data is scarce.
+
+p(ttest | inputtest) = [sum of gerrorgrid] p(Wg | D) * p(ttest | inputtest, Wg)
+	pr of a test output given test input = sum over all grid pts of pr that that grid pt is a 
+	good model (=p(Wg|D)) times pr that we'd get that test output given the input and the grid pt
+
+We use MCMC to make Full Bayesian practical for big nnets
+	Randomly, but w/ bias toward going downhill in cost fct, try out weight vectors
+	Result: sample weight vecs in proportion to their freq in the distrib
+	So can approx full distrib well
+Can't use grid method when many params, b/c # of grid pts is exponential to # of params
+But if there's enough data to make most param vectors v unlikely, only a tiny fraction of grid pts
+have big effect on predictions
+	We can just eval this tiny fraction
+So! Idea is to approx by sampling weight vecs according to their posterior prs
+
+p(ytest | inputtest, D) = [sum over i] p(Wi|D) * p(ytest | inputtest, Wi)
+
+Sample weight vecs from distrib w/ pr p(Wi|D)
+	Will get correct expected value (though there is sampling error)
+
+Sampling weight vectors is a little like backprop
+In backprop, move weights in dir that decreases cost
+In std backprop, we move weights in dir that decreases costs, ie dir that increases log likelihood plus
+the log prior, summed over training set
+	Settles to local min or plateau
+If we add some G.ian noise to weight vec after each update, it won't settle down; it'll keep wandering,
+but will prefer low cost regions of weight space
+
+MCMC fun fact: if we use right amt of noise and let weight vec wander enough before take a sample,
+we get unbiased sample from the true post distrib over weight vecs
+	This makes it feasible to do full Bayesian learning w/ 1000s of params!
+	There are MCMC methods that take less time to give unbiased estimate
+
+W/ minibatches: if we compute gradient of the cost fct on a random minibatch, that's an unbiased estimate
+w/ sampling noise
+	We can use that sampling noise as the noise an MCMC method needs!
+	Ahn, Korattikara, Welling ICML 2012
+	Good for huge nets
+
+There is a method to combine many diff nnet models w/o having to train them separately. It's dropout!
+	Dropout has a diff archi on each training case. It's like training each model on a diff training
+	case, and using a lot of weight sharing
+
+Two ways to avg models:
+1) Avg of their output probabilities
+2) PRODUCT of their output probabilities
+	Geometric mean - sqrt of product
+		Will come to less than 1, so need to divide result by sum of the geo means to normanlize
+		back to summing to 1
+
+Dropout is more practical (but less accurate) than full Bayesian
+
+Dropout w/ a single hid layer w/ H units and 50% chance of omitting amounts to randomly sampling from
+2^H architectures. All archis share weights.
+	So only a few models get sampled, and each that does gets only 1 training case; equiv to an 
+	extreme version of bagging
+	Sharing weights means each model is v strongly regularized by other models
+		Better regularizer than L2 or L1 bc tends to pull weights toward t, not toward 0
+At test time, we use ALL the hidden units, but halve their outgoing weights. Gives same expected value! 
+	This is exactly the geometric mean of the predictiosn of all 2^H models
+	If we're using softmax output, that is
+For more than one hid layer: use 0.5 dropout pr, at test time halve the outgoing weights of all units
+	This is called the "mean net"
+	For more than one hid this is NOT exactly same as avging all models, but is good approx, and fast.
+	Alt: can run the stochastic model several times on the same input. Advantage of this: get an idea
+	of the uncertainty in the answer.
+
+Can use dropout on input layer, too! Will want a higher pr of keeping a unit, though.
+	Used in "denoising autoencoders"
+
+Dropout is v good for reducing overfitting
+	Any net that uses early stopping benefits from dropout - though adds a lot of training time,
+	and maybe need more hids
+If your net is NOT overfitting, and you have enough comp power, use a bigger one and use dropout!
+
+Dropout inspired by problem where mix of models cooperates. It prevents complex co-adaptation that 
+doesn't generalize well.
+If a hid has to work well w/ combinatorially many sets of coworkers, it'll tend to do smthng that's 
+individually useful and distinct from what its coworkers do.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

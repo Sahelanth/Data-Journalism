@@ -1,0 +1,301 @@
+Learning algo for linear N
+
+In perceptron, weights approach optimal set of weights
+In linN, *outputs* approach optimal target outputs
+
+Wh can't Ptrons do hidden layers?
+	B/c they seek every "generously feasible" weight
+	In more complex nets, the avg of 2 good solutions might be a bad solution ("non-convex problem"), so
+	can no longer guarantee getting closer
+
+So how do we show output values get closer to the target values?
+Simplest example of learning where output approaches target is linN w/ error^2 measure
+
+linN: real-valued output which is weighted sum of inputs
+
+y = sum[wi*xi] = (w^T)*x
+output = weight vector * input vector
+
+We could write down 1 eqn per training case and solve for best set of weights. Why don't we?
+	B/c that wouldn't generalize to multilayer non-linear
+	B/c real neurons don't solve symbolic eqns
+So we use an iterative method
+	Compare a case where only info you get is total price of a meal, but you can vary proportion of each food
+	you buy to infer each food's price
+	Iterative approach: start w/ random guesses for the prices, then adjust them to better fit observed
+	whole-meal price
+	Each meal price gives a linear constraint on the prices of each food
+
+price = xfish*wfish + xchips*wchips + xketchup*wketchup
+price = vector of portions * vector of price per portion
+Prices of the portion are like weights in linN
+Let's say true weights used by the cashier are wfish = 150, wchips=50, wketch = 100
+Buy xfish=2, xchips=5, and xk=3 portions
+And let's start by guessing each weight is 50
+So our initial estimate is price=500, when true price=350
+
+Then we use the "delta rule" for learning
+delta[wi] = eta*xi(t - y)
+change in weight = learning rate * number of portions of ith thing times residual error (target minus estimate)
+
+W/ learning rate = 1/35, weight changes are +20, +50, +30
+In the above example:
+delta[wi] = eta*wi(t - y)
+delta[wi] = 1/35 * xi * 350, xfish=2, xchips=5, xk=3
+delta[wfish] = +20, delta[wchips] = +50, delta[wk] = +30
+New weights become: wf=70, wc=100, wk=80
+Note the weight for chips got worse! Output improves, but individual weights might not
+New estimate: y=xfwf + xcwc + xkwk
+=2*70 + 5+100 + 3*80 = 880
+
+
+Deriving the delta rule
+Define error as the squared residuals summed over all training cases
+E = 0.5* [sum over n in training of](t^n - y^n)^2
+Now differentiate w/ respect to a weight, to get error derivatives for weights
+dE/dwi = 0.5 * [sum over n](dy^n / dwi)(dE^n / dy^n)
+= -[sum over n](xi^n)(t^n - y^n)
+Chain rule tells us that how the error changes as we change a weight is 
+how the output changes as we change weight times how error changes as we change output
+
+The d above is lowercase delta. Signifies partial derivative - many diff weights you could change to change 
+the output, here we're just considering change to weight i.
+
+dy/dwi = xi, because y = wixi
+
+dE/dy = t - y
+
+-> delta[wi] = -learning rate * dE/dwi = [sum over n]learning rate*(xi^n)(t^n - y^n)
+change in weight = sum over all training cases of learning rate * input vlaue * diff b/w target and output
+	Minus sign in eqn is b/c we want to decrease the error - if it wasn't there we'd increase error!
+
+"batch delta rule." Changes weights in proportion to their error derivatives summed over all training cases.
+dE/dwi = deriv of error w/ respect to weight
+
+How well's the delta rule work? Does it eventually get the right answer?
+	There may be no set of weights that gives perfect answer, but there will be a set that gives good approx
+	By making the learning rate small enough, we can get as close as we like to best answer!
+Tradeoff b/w speed and precision of learning!
+If 2 inputs are highly correlated, it's hard to get their weights to correct values
+e.g. if usually get same amt of chips as of ketchup, hard to decide how to divide the price b/w chips and ketchup,
+what part of the price is due to each
+
+Relationship b/w online delta rule and perceptron learning rule
+In Ptrons, increment or decrement weight vec by input vec, but only change weights when make an error
+In online delta rule, increment or decrement weight vec by input vec scaled by the residual error and the learning rate
+	Have to choose a learning rate! Too big is unstable, too small is slow
+
+
+Error surface for a linN
+Geometric understanding of what happens when linN learns
+Error surface is in multidim space w/ a horizontal axis for each weight and one vertical axis for the error
+
+Want to minimize the error, which forms a parabola when graphed against each weight vector
+	A quadratic bowl for linN w/ squared error
+Vertical cross-sections are parabolas
+Horizontal cross-sections (one weight graphed against another weight) are ellipses
+
+Error surface for nonlinear nets w/ mult layers is much more complicated.
+
+
+Problem: deataset w/ 2 training pts
+x1 = (1, -1) t1 = 0 ; x2 = (0, 1) t1 = 1
+Consider net w/ 2 input units connected to a linN w/ weights w = (w1, w2)
+
+Squared error is defined as 0.5(wTxi - ti)^2 + 0.5(wTx2 - t2)^2
+
+What's the eqn for the error surface?
+0.5(w1*1 + (-1)*w2 - 0)^2 + 0.5(wi*0 +w2*1 - 1)^2
+0.5(w1 - w2)^2 + 0.5(w2 - 1)^2
+0.5(w1^2 - 2w1w2 + w2^2) + 0.5(w2^2 - 2w2 + 1)
+
+The delta rule computes the deriv of the error wrt the weights
+Changing the weights in proportion to that deriv is equiv to descending the error surface in steepest way
+
+Think of going down the contour lines of a hill on topo map
+Travels perpendicular to the contour lines
+This is batch learning, w/ gradient summed over all training classes
+
+Online learning instead zig-zags around the direction of steepest descent
+More diagonal ellipse -> more corr b/w weights -> harder to learn on
+
+Change in weights moves you toward one of the training cases. Move perpendicular toward one line or
+another, until reach the intersection of lines, which is where is correct for both training cases
+
+Learning is slow when the ellipse is diagonal and v elongated, ie when w1 and w2 are highly corr
+Dir of steepest descent becomes nearly perpendicular to direction that the minimum is in! Opp of what we want.
+(Gradient vec has large component along short axis of the ellipse, small component along long axis of ellipse)
+
+
+Logistic neuron - learning its weights
+Need to understand how to make a single nonlinear N before can understand how to make a net of them learn.
+
+logN: z = b + sum[xi*wi]
+total input = bias + sum of inputs times weights
+
+output = 1/(1 + e^-z)
+
+Real-valued output that's smooth and bounded fct of total input.
+
+Output ~0 for big neg z, 0.5 for 0 z, ~1 for big pos z
+
+The derivs of the logit, z, wrt inputs and weights are v simple
+
+z = b + sum[xi*wi]
+dz/dwi = xi	dz/dxi = wi
+
+The deriv of output wrt the logit is also simple:
+y = 1/(1 + (e^-z))	dy/dz = y(1 - y)
+
+Now, can use chain rule to get derivs needed to learn the weights
+Need deriv of output wrt each weight
+
+dy/dwi = dz/dwi * dy/dz = wi*y(1-y)
+
+dE/dwi = sum[dy^n/wi * dE/dy^n] = -sum[(xi^n)*y^n * (1 - y^n)(t^n - y^n)
+
+Comparing the eqns, I find that deriv of output wrt total input plays the
+same role in formula for dE/dwi for logisticN that learning rate does for linearN
+That deriv equals(y^n)(1 - y^n)
+	This is the slope of the logistic fct
+
+
+MOTIVATING BACKPROP
+This is how to learn mult layers of features
+We want a way to find good features that doesn't require insights into the task (as in
+hand-coding) or lots of trial and error
+Need to automate the loop of designing features for a particular task and seeing how
+well they work
+
+But first, a more obvious algo that doesn't work as well as backprop does - perturbation
+The obvious idea is perturbing weights, which is effectively an evo algo!
+Randomly change a weight, see if that improves performance, if so save that change
+	This is a form of reinforcement learning
+	V inefficient. Need to do mult passes on a representative set of training
+	cases just to change a single weight
+
+Backprop is more efficient that perturbation by a factor that depends on the # of weights
+Also, perturbation has trouble getting precise - late in learning, large weight perturbations
+nearly always make things worse, b/c will have wrong values relative to each other
+
+Parallel perturbation is an alternative to serial; can perturb all the weights and corr the
+performance gain w/ the weight changes
+	Not better, b/c need many trials on each training case to see effects of changing one
+	weight thru the noise from changing other weights
+
+A better idea: randomly perturb the activities of the hidden unites
+	Once we know how we want a hidden activity to change on a given training case, we can
+	*compute* how to change the weights
+	This is more efficient. But backprop is even more eff, b/c only needs to look at activities,
+	which are fewer than weights
+		So backprop's more eff than this by a factor of [number of neurons]
+
+HOW BACKPROP WORKS
+We dunno what hidden units "should" do, but we can compute how fast the error changes as we change
+a hidden activity
+	Instead of using desired activities to train the hidden units, use *error derivatives wrt
+	hidden activities*
+
+Each hidden unit can affect many output units, and so can have many sep effects on the error. Have
+to combine these effects.
+We can compute *error derivs* for all hidden units efficiently at same time
+	Then use err derivs for hidden activities to get err derivs for weights going in to a hidden unit
+
+
+EXAMPLE of backprop w/ 1 training case
+1. Convert discrepancy b/w each output and its target into an error deriv
+E = 0.5 [sum over j] of (tj - yj)^2 		t is target output, y is actual output, j is
+	dE/dyj = -(tj - yj)
+
+2. Compute error derivs in each hidden layer from error derivs in the layer above.
+We'll use error deriv wrt output to calc same quantity in layer above
+dE/dyj  ->  dE/dyi
+
+**Backprop IS taking error derivs in 1 layer, then using them to calc error derivs in previous layer**
+
+Here, let's say there are 3 output units, including unit j, w/ a hidden unit i b/w them and input
+Changing the output of unit i will change activities of the 3 output units that connect to it, so must
+sum up all those effects
+
+3. Then use error derivs wrt activities to get error derivs wrt the incoming weights
+
+We're gonna have an algo that takes error derivs we've already computed (for top layer) and combines them
+using same weights as in the forward pass to get errors derivs in the layer below
+
+*Crucial slide at 7:36*
+Backproping dE/dy - error derivs wrt output of a unit
+	^
+	|yj
+O	O	O		output layer
+	^
+	|yi
+O	O	O		hidden layer
+	^
+	|
+O	O	O		input layer
+
+(In input and hidden layer, the left and right units also connect to the central unit in the layer above)
+(In hidden layer, central unit also connects to left and right units of output layer)
+Output unit j has outpu yj
+Hidden unit i has output yi
+Total input received by unit j is zj
+
+We need to convert error deriv wrt yj into error deriv wrt zj
+Chain rule lets us: dE/dzj = dyj/dzj * dE/dyj = yj(1 - yj)*dE/dyj
+Now we can compute error deriv wrt output of unit i
+dE/dyi = [sum over j] dzj/dyj * dE/dzj = [sum over j] wij * dE/dzj	wij = weight on the connection from i to j
+
+
+deriv of error wrt y = sum of (deriv of input received by j wrt output of j) * (deriv error wrt input to j)
+= sum (weight on conn from i to j) * (deriv error wrt input to j)
+
+Error deriv wrt output of unit i is sum over *all* the outgoing connections to the layer above (not just
+the i->j connection!) of the weight on i->j times err deriv wrt total input received by unit j
+
+Once we have dE/dzj, it's easy to get the err derivs for all the weights coming into unit j
+dE/dwij = dzj/dwij * dE/dzj = yi * dE/dzj		wij = error deriv wrt a weight
+
+That is, the rule for changing the weight is to multiply dE/dzj by tthe activity coming in from the layer below
+
+
+Figuring out how to get error derivs for all layers in the net is key, but not the only issue to address.
+Also need to decide how often to update weights, and how to prevent a large net from overfitting
+Backprop efficiently computes dE/dw for every weight on a single training case. But to get a full learning
+procedure, more decisions to make a/b how to use these error derivs.
+	How do we use dE/dw to get good set of weights?
+	How do we make sure learned weights generalize well?
+Optimization issues are a/b how you use the weight derivs - how often and how much to update the weights
+	Online: update after each training case. Zigzags, but w/ small updates it avgs to sensible values
+	Full batch: after full sweep thru training data
+
+Full batch is slow - we can just look at a small sample of training cases and get good idea of dir to update in.
+This is called mini-batch learning. Good compromise b/w online and full batch.
+
+How much to update
+	A fixed learning rate?
+	Adapt the learning rate, decreasing it if we start oscillating?
+	Adapt learning rate on each connection separately, so some weights change faster than others?
+	Don't go in dir of steepest descent at all, b/c of how steepest descent often becomes v slow
+	near the end of a learning problem?
+
+OVERFITTING
+There are 2 kinds of noise in training data
+	Target values may be unreliable. Usually a minor worry.
+	*Sampling error.* Accidental regularities due to the specific training choices chosen, esp if
+	small sample size.
+		Model can't tell "real" regularities that will generalize from sampling error.
+	More degrees of freedom (more flexibility!) create more risk of overfitting
+	When a single model fits a lot of data well, it's a good/ convincing model
+	Small-degree polynomial w/ small coefficients makes for a parsimonious model
+
+How to reduce overfitting in NNs
+	Weight decay. Try to keep weights small, or many of the weights at 0. Make model simpler.
+	Weight-sharing - insist that many neurons must have same weight, which then can be learned
+	as normal
+	Early stopping - do test sets, and stop training when performance on test sets starts
+	getting worse
+	Model averaging - think random forest. Avg together lots of nets.
+		Bayesian fitting of NNs - fancier model averaging.
+	Dropout - randomly cut out hidden units during training, to force the net to be more robust
+	Generative pre-training - complicated.
+

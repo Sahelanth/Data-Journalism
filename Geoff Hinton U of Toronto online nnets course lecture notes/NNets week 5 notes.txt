@@ -1,0 +1,253 @@
+WHY OBJ RECOG IS HARD
+
+Issues: segmentation, lighting, viewpoint, defining object
+	V difficult for hand-engineered programs
+
+Segmentation: real scenes are cluttered w/ other objs
+	Parts of an obj can be hidden behind other objs
+	Hard to tell which parts are parts of the same obj
+Can't use movement or stereo cues that humans use IRL on a static image
+
+Lighting dets intensities of pixels as much as obj's inherent properties do
+
+Deformation: objs w/ many diff shapes can have same name. Common for digits.
+	Affordances: object classes are often defined by how they're used. So "chair"
+	can mean many diff shapes.
+
+If letters can be rotated, b and q hard to distinguish, d and p hard to distinguish
+
+Changes in viewpoint causes changes in images
+	Info hops b/w input dimensions - recall pixels are the input dims
+Translation is really hard to deal w/! "Dimension-hopping"; it's like age of pt sometimes
+being in input dim that's supposed to code for weight
+
+
+ACHIEVING VIEWPOINT INVARIANCE
+One of the main difficulties in machine vision; still lack generally accepted solns
+
+Approaches:
+Use redundant invariant features
+Put a box around the obj and use normalized pixels w/in that box
+Use replicated features and pool them - CNNs!
+Use a hierarchy of parts, explicitly represent their pose relative to the camera
+
+INVARIANT FEATURE APPROACH
+Extract a large, redundant set of features that are invariant under transformation
+	Ex a pair of roughly parallel lines w/ a red dot b/w them. That's the baby gull pecking cue!
+W/ enough invariant features, there becomes only one way to assemble them into an object! So don't need
+to directly state how the pieces should fit together. Don't need to rep the rels b/w features directly,
+bc other features capture it.
+Overlapping redundant features save us from having to rep rels
+Unfortunately, forming features from parts of diff objs is tricky to avoid and can mislead. I think that
+"including a hand in the definition of a dumbbell" thing is an example
+
+JUDICIOUS NORMALIZATION APPROACH
+Put a box around the obj, use it as a coordinate frame for a set of normalized pixels
+
+Relative to top of box, R has a loop; relative to right of box, R has an angled line
+Describing features of shape relative to a box makes those features invariant. Solve dim-hopping b/c if choose
+box correctly, same part of a rigid obj always occurs on same normalized pixel
+
+Box doesn't have to be rectangle, and can provide invariance not just on translation and rotation but also
+scale, shear, stretch...
+
+But choosing the box is hard b/c segmentation errors, occlusion, unusual orientations.
+	Get a regress problem - need to recog shape to get the box right!
+
+Site note - humans don't need to do mental rotation as a prereqs for shape recog, contra opinion of some psychs.
+For example, we do shape recog before mental rotation when deciding if a shape has been mirror-flipped.
+
+BRUTE FORCE NORMALIZATION APPROACH
+Train a recognizer using well-segmented, upright images to fit the box
+At test time try all possible boxes in a range of positions and scales
+Widely used for detecting things that are normally upright, like faces and house #s in unsegmented images
+If recognizer can cope w/ some variability in position and scale, can use a coarse grid when trying all possible
+boxes, and this becomes much more efficient.
+
+CNNS FOR DIGIT RECOG
+Deep CNNs from Yann LeCun are big success story from 1980s.
+
+CNNs are based on *replicated feature approach.*
+Use many diff copies of the same feature detector at diff positions in the image.
+	Whole bunch of feature detectors - groups of Ns w/ identical weights - across the field
+
+Can also replicate feature detectors across scale and orientation, but that's harder and more expensive
+than doing so across position.
+Replication across position also greatly reduces # of free parameters to be learned.
+
+Use several diff maps, each w/ its own feature detector type replicated across it. (You're not gonna get far
+if there's only 1 feature type you can detect, even if can detect mult copies of it everywhere in the image)
+	Each patch of the image will be rep'd in diff ways on diff maps
+
+Replicated features are easy for backprop to work on, it's easy to modify backprop algo to include linear
+constraints b/w the weights
+Compute the gradients as usual, then modify the gradients so they satisfy the constraints
+	If the weights started off satisfying the constraints, they will continue to satisfy them
+Ex. we want the constraint that w1 must = w2
+	That'll be true if they start off equal and delta w1 = delta w2
+	So to make sure the delta ws stay the same, calc dE/dw1 and dE/dw2, and then use the sum or avg of those
+	two gradients as both delta w1 and delta w2
+	e.g. use (dE/dw1 + dE/dw2) as delta w for both w1 and w2
+This forces backprop to learn replicated feature detectors!
+
+
+What does replicating the feature detectors achieve?
+Does not by itself achieve translation invariance
+What they achieve is *equivariance.* Translated features give a translated representation.
+
+Equivariance:
+Rep by activated neurons:	|..:'     |		|     ..:' |
+Image:				|2	  |		|     2	   |
+
+Activities are equivalent, but Ns in diff location - diff Ns - are repping it
+Equivariance in activities, invariance in weights.
+There is, however, invariant knowledge: if a feature is useful in some locations during training, detectors for
+that feature will be available in all locations during testing.
+
+TO ACHIEVE INVARIANCE IN ACTIVITIES, what you need to do is pool the outputs of replicated feature detectors.
+Get a small amt of translational invariance at each level of a deep net by avging 4 neighboring replicated
+detectors to give a single output to the nextlayer.
+	This reduces # of inputs to the next layer of feature extraction, which allows us to afford having
+	many more diff feature maps.
+	Taking max of the 4 instead of avg actually works slightly better.
+Issue: after several layers of pooling, have lost info ab precise positions of things. That's ok if just want
+to say "face detected", but makes it impossible to use the precise spatial rels b/w high-level parts for recog,
+so prob can no longer say *whose* face. Will return to this issue.
+
+Problem: CNN whose input is 3x3 iamge.
+Each hidden unit has a 2x2 weight filter that connects to localized region of the image -h1 to pixels 1x1, 2x1,
+1x2, and 2x2, for example.
+Black pixels are value 1, white value 0.
+We'll pool output of each hidden unit using max pooling.
+Example image:
+|*| | |
+|*| | |
+| | | |	
+h1 sees 2 black pixels, so it outputs 2.
+No unit sees more, so 2 is the max. Top-layer Ns don't know which of the 4 hidden units outputed 2; don't
+know hwere in the 9-pixel image those 2 are.
+
+
+LENET.
+Really good handwritten digit recognizer.
+Feedforward net, backprop. 
+Many hidden layers
+Many maps of replicated units in each layer
+Pooling of the outputs of nearby replicated units
+A wide net (reads many pixels wide), so can cope w/ several chars at once even if they overlap, and so don't
+need to segment first
+And has a clever way called *maximum margin* of training a complete system to go from pixels to zip codes, not
+just a digit recognizer.
+Commercially used, read 10% of the checks in the US at once point!
+yannlecun.com has demos.
+
+LeNet 5 architecture:
+Input 32x32 pixels
+	|
+	V
+C1: 6 diff 28x28 feature maps - each feature is 3x3 pixels (so each map has only 9 parameters), and weights are
+constrained together
+	|
+	V
+S2: pool outputs of neighboring replicated features to 14x14
+	|
+	V
+More subsampling
+	|
+	V
+	Output
+
+As go up the hierarchy, get features that are more complicated but more invariant to position.
+
+TANGENT ON PRIORS IN ML
+Design of network can incorporate prior knowledge
+	Connectivity
+	Weight constraints
+	Neuron activation fcts that are appropriate for the problem
+Less intrusive than hand-designed features, but DOES prejudice the net toward the particular way of
+solving the problem that we had in mind.
+Alternatively, we can use our prior knowledge to create a lot more training data. Simulated data can let you
+do better than w/ real data alone - though can make learning take longer.
+Also, more training data can let optimization discover ways of using the multilayer net that we wouldn't think of
+
+BRUTE FORCE APPROACH
+LeNet uses knowledge a/b the ivnariances to *design* local connectivity, weight-sharing, and pooling.
+	Achieves ~80 errors, vs human 20-30.
+	Many tricks, including synthetic data, let Ranzato 2008 reduce this to 40.
+
+Ciresan et al 2010 inject knowledge of invariances by putting in huge amt of carefully designed synthetic data
+	APplied many diff transformations to each real training case to get synth cases
+	Then train a large, many-layer net - many layers and many units per layer - on a GPU
+	The synth data saved them from overfitting
+	Achieved 35 errors
+	W/ model avging, got down to 25 errors
+
+WHEN IS A LOWER ERROR RATE SIGNIFICANT?
+Is 30 errors in 10k cases sig better than 40? Depends which errors!
+
+McNemar test: care a/b the ones model 1 got wrong and M2 got right, and the ones M1 got right and M2 got wrong
+Ratio matters - if (M2 right, M1 wrong) greatly exceeds (M1 right, M2 wrong), then M2 is better than M1.
+
+CNNS FOR OBJECT RECOG
+
+High-res cluttered-scene object recog is much harder than digit recog.
+
+1. Many more classes! 10 digits vs [arbitrary number, often use 1000] possible objects
+2. 100x as many pixels - 256x256 color vs 28x28 gray
+3. 2D image of 3D scene - lose info
+4. Clutter that reqs segmentation, of a kind beyond overlapping digits
+	Occlusion of large parts of an object
+Mult objects in each image
+Lightfing variation
+
+
+ILSURC-2012 competition on IMageNet
+1.2 mil high-res training images. 1k hand-labeled classes... of shaky reliability, b/c can be 2 objs of
+diff classes in an image w/ only 1 labeled.
+Task: get "correct" class in your top 5 bets.
+	Also side localization task - put a box around obj w/ at least 50% overlap w/ correct box
+
+
+Many of the best existing machine viz methods were applied in this competition. Most complex, multistage w/ early
+handtuned and some learned features.
+Best systems got 25-30% classification error.
+Alex Krizhesky's CNN got only 16% error! Huge gap, rare to see such a thing in such competitions.
+
+Here's how the winning CNN works:
+V deep CNN, like Yann LeCun's digit recognizers
+7 hidden layers, not counting some max pooling layers
+Early layers are convolutional, reducing # of parameters
+Last 2 layers globally connected. This is where most of the parameters are. These 2 layers look for combinations
+of features detected by early layers. Need many params b/c many possible combos of features.
+Activation fcts used - rectified linear units, in every hidden layer. ReLus train much faster than logNs, and 
+are "more expressive"(? guess this is how straight line has more diff b/w most of its points than log curve does)
+	RELUS ARE BEST NEURONS FOR IMAGE RECOGNTIONS
+Competitive normalization in hidden layers - suppress activities of a unit when other nearby units are v active.
+	This helps handle variations in pixel intensity, b/c it means ignore things that are only faintly activated,
+	which helps when e.g. an edge detector gets spuriously weakly activated.
+
+TRICKS THAT IMPROVE THE NET'S GENERALIZATION:
+Synthetic data: included random 224x224 patches of the 256x256 images, and right-left reflections of them. Gave
+many more training images, and helped w/ translation (which CAN still be an issue for CNNs).
+
+"Dropout regularization" - a method to regulzarize the weights in the globally connected layer
+	Randomly omit 1/2 the hidden units in a layer when presenting each training case. Prevents overfitting
+	by stopping hidden units from relying too much on other hidden units to decide what to do - trains them
+	to respond more independently
+Req'd intense hardware, 2 GPUs and a v efficient implementation of CNNs. Took a week of training
+Big data techniques, across many cores, are good for this. Big NNs will improve faster than hand-crafted machine
+vision methods will as big data gets easier.
+
+Other good NN image recog:
+Vlad Mnih 2012. Non-conv net w/ local fields and mult layers of ReLus to find roads in cluttered aerial images.
+Maps allow lots of training data - road has fixed width and map labels center of road, so can tell which pixels
+should be the road.
+Difficulties:
+Occlusion by buildings, trees, cars
+Shadows from buildings
+Major lighting and minor viewpoint changes
+Incorrect labels are biggest problem
+	Often off by a few meters, so label wrong spots as road
+	Also, arbitrary decisions a/b what's a road and what isn't
+
+

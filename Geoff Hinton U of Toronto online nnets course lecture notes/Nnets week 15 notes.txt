@@ -1,0 +1,280 @@
+Autoencoders set target to the same as input, and do backprop.
+
+
+FROM PCA TO AUTOENCODERS
+
+Idea of PCA: data often lies near a linear manifold in high-dim space. We can project the data onto the manifold,
+representing it w/o losing much b/c there's not much variation in dirs orthogonal to the manifold.
+
+An nnet w/ 1 hid layer and output and hids linear is an (inefficient) way to do PCA.
+	But generalizes to deep nets in which code is nonlin fct of data and reconstruction is nonlin fct of code.
+	THAT lets you deal w/ curved rather than planar manifolds in high-dim space, allowing much more powerful
+	reps of the data
+
+PCA takes N-dim data and finds the M orthogonal dims in which the data vary most
+	These M principal dirs form a lower-dim subspace
+	We can rep an N-dim datapoint by its projections in the M principal dirs; this loses all info a/b where the
+	datapt is located in the remaining orth dirs, which isn't much info
+
+We reconstruct by using the mean vaue over all the data on the (N-M) dirs that aren't represented
+	Reconstruction error = sum of all unrepresented dirs of squared differences of the datapt from the mean.
+
+Ineff nnet implementation: create a bottleneck w/ M units
+
+output vec (N output us)
+	^
+	|
+	code (M hids)
+	^
+	|
+input vec (N input us)
+
+Want to make output vec as similar as possible to input, so that hids learn an efficient code (= eff rep) of input
+W/ linear hid and out, will learn hids that are a linear fct of data and minimize squared reconstruction error,
+exactly as PCA does.
+	Will be in same space as the first M components found by PCA, though may be stretched or skewed, and
+	weight vecs might NOT be orthogonal, and unlike PCA the units will tend to have equal variances.
+
+NONLIN layers before and after the code let us efficiently rep data that lies on or near a NONLIN manifold
+
+	output vec
+	^
+	|
+	hidden		"decoding weights" are the weights from code to here and from here to output vec
+	^
+	|
+	code
+	^
+	|
+	hidden		"encoding weights" are the weights from input to here and form here to code
+	^
+	|
+	input vec
+
+Using a sup learning algo (backprop w/ stochastic gradient descent) to do unsup learning!
+
+Encoder converts coords in the input space to coords on the manifold.
+Decoder does the inverse mapping.
+
+DEEP AUTOENCODERS
+Can make better reps than PCA can, but took long time to figure out how to train them
+
+Good way to do nonlin dimensionality reduction bc:
+	Provide flexible mappings both ways
+	Learning time linear w/ # of training cases
+	Final encoding model is just a matrix multiply for each level, so compact and fast.
+
+Correct way to optimize deep autoencoders: unsup layer by layer training. OR just initialize weights carefully like in
+echo state nets.
+
+Deep autoencoders are great for doc retrieval and visualization
+
+Latent semantic analysis is basically PCA on vecs of word counts extracted from docs. Good way to compare similarity of
+docs, retrieve similar ones.
+Deep autoencoders beat LSA for same reason they beat PCA - can learn a nonlinear manifold. Deep autoencoder w/ 10
+components is worth LSA w/ 50 components.
+
+2-component autoencoder to make a 2-dim map gives you a much better viz of doc similarity than 2-component LSA does.
+
+How to find docs similar to a query doc:
+1. Convert each doc into a "bag of words" - a vec of word counts ignoring order. Remove stopwords bc they contain little
+info ab what the doc is about.
+2. Reduce this vec to a much smaller vec that still contains most of the info ab the doc.
+
+How to compress the count vec:
+
+	2000 reconstructed counts	output vec
+	^
+	|
+	500 units
+	^
+	|
+	250 units
+	^
+	|
+	10 real numbers
+	^
+	|
+	250 units
+	^
+	|
+	500 units
+	^
+	|
+	2000 word counts	Input vec
+
+Train net to repro its input vec as its output; that forces it to compress as much info as possible into that 10-number
+bottleneck, which then becomes a good code by which to compare docs.
+
+Also, better to do PROBABILITY VECTOR than raw word counts; divide counts in a bad of words vec by total # of non-stopwords
+in the doc.
+	Resulting pr vec gives pr of getting particular word if pick a random word from the doc.
+	So, use a SOFTMAX output for the autoencoder
+
+N = # of words in the doc
+When training an RBM in an autoencoder stack, make the vis-to-hid weights N times bigger than hid-to-vis weights bc
+have N obs from the pr distrib. If didn't do this the input us would have really small activities
+
+Train a stack of RBMs, fine-tune w/ backprop
+
+Performance measure:
+Train on bags of 2k words for 400k training case docs
+Test on separate 400k docs as so: pick 1 test doc as a query. Rank order all the other test docs using cosine of angle
+b/w 10-dim code vecs.
+	Repeat using each of the 400k test docs as the query - cross-validation
+	Plot # of docs you retrieve vs proportion of those docs that are in same hand-labeled class as the query doc.
+	Another way to compare: compress all docs to 2 #s using PCA, then label classes of docs by color to see if we
+	are indeed grouping classes together.
+		PCA on log(1+count) rather than just raw word count works better than just PCA on hugely varying word counts
+	This but to 2 #s w/ deep autoencoders shows that deep auto separates categories really well!
+
+
+SEMANTIC HASHING
+V efficient way to find docs similar to a query doc. Basically sets up content-addressable memory. Translate a doc to a
+"memory address", nearby addresses should have similar docs.
+
+Rooted in composing binary descriptors for images, e.g. inside/ outside. Easy to do for a few, but composing ~30 bi
+descripts *that are orthogonal to each other* is real hard.
+
+So, how do we find binary codes for docs? Use an architecture like discussed above, but instead of 10 real #s as the
+code layer, use 30 log us. This'll let us encode 30 binary descrips.
+	Now, the log us will be used in their middle ranges, to convey as much info as possible a/b the 2k word counts.
+	That's actually a problem. So during fine-tuning stage we add noise to the inputs to the code units. This noise forces
+	the code units' activities to go bimodal, top or bottom of the s instead of middle, to resist effects of the noise.
+	At test time, we simply threshold the activities of the 30 code units and make a binary code out of that - result
+	is a set of 30 binary features that are good for reconstructing the bag of words
+		OR we can just make the code layer out of BINARY STOCH US instead of logs us we convert to bi and add
+		noise to. Much simpler.
+		Compare codes to compare docs? Could, but treating code as address is faster.
+
+Use our deep autoencoder as a hash fct that converts docs into 30-bit addresses. Each address will have a pointer back
+to doc (or docs, multiple can have same code) that have that code.
+	Now, just flipping bits in an address to find nearby addresses is a way to find similar docs! Much cheaper than
+	searching a massive list.
+	This is nicknamed "supermarket search" - similar things tend to be close by.
+	Supermarket search works badly in low dim, where similar things can spread out a lot, but works great in high dim,
+	where similar things end up in the same corners.
+
+Most fast retrieval methods work by finding intersections b/w long lists. You enter a rare word, google it, google returns
+places in list that have it.
+A comp's memory bus can intersect 32 v long lists in a single instruction. Each bit in a 32-bit bi code specs a list of 1/2
+the addresses in memory. (e.g. 0 is half the addresses, 1 the other half)
+	Memory bus intersects 32 lists to find spot that meets constraint specified on each list.
+	Semantic hashing uses ML to map the retrieval problem onto the type of list intersection comp is good at.
+If our 32 bits correspond to meaningful properties of docs or images, we can find similar ones v fast.
+
+
+LEARNING BINARY CODES FOR IMAGE RETRIEVAL
+
+We have great techniques for finding similar docs; finding similar images less so.
+Converting image into 256-bit binary code works well. But a long sequential search sucks; so semantic hashing first.
+
+Basic problem: pixels aren't like words. Indiv pixels tell us little ab the content.
+	Extracting object classes from images *was* hard; thanks, ImageNet contestants!
+
+	One approach is to extract a real-valued vec w/ info a/b the content; but matching real-valued vecs is slow and
+	takes a lot of storage.
+	Short bi codes are v easy to store and match
+	Even faster is a 2-stage method:
+		1. Semantic hashing w/ 28-bit codes to get a shortlist of promising images
+		2. 256-bit bi code serial search for good matches.
+		Even a 256-bit code reqs only a few words of storage per image, and the serial search can be done
+		using fast bit-operations.
+
+Alex Krizhevsky's deep autoencoder for color images:
+
+	256-bit binary code
+	^
+	|
+	512
+	^
+	|
+	1024
+	^
+	|
+	2048
+	^
+	|
+	4096
+	^
+	|
+	8192
+   ^	^	^
+   |	|	|
+1024	1024	1024	real-valued pixels
+red	green	blue
+channel channel	channel
+
+1st hid (8192) must be bigger than inputs (3*1024) bc it's log us and inputs are real #s; log us have less capacity.
+
+Each subsequent layer 1/2 the size of the last. There is no particular theory justification, but works well.
+Encoder has ~67 mil params. Days to train w/ a good GPU on 2 mil images.
+
+Autoencoder works way better than Euclidean distance on raw pixels does, at finding similar images.
+	Note Euc distance tends to find smooth "matches" to high-variation input images that don't actually look v similar
+	to the input. Why? This is bc it tries to match an avg when can't find match w/ exact pixels in similar places.
+
+
+How to make image retrieval more sensitive to objects and less sensitive to pixels:
+1. Train a big net to recog lots of diff types of object in real images - see Week 5
+2. Use the activity vec in last hid layer as rep of the image
+This should be a much better rep than the pixel intensities are.
+
+Euc distance b/w activity vectors that last hidden layer gives for diff images IS a good way to find similar images;
+binary codes even better!
+	Similar features, but quite diff pixels
+
+
+SHALLOW AUTOENCODERS FOR PRE-TRAINING DEEP NNETS
+
+Alternative to stacks of RBMs
+A single RBM can be a good SHALLOW AUTOENCODER
+When we train an RBM w/ CD1, it tries to make reconstructions look like the input data. Like an autoencoder, but strongly
+regularized by using binary activities in hid layer, which restricts capacities a lot.
+	RBMs trained w/ max lik are NOT like autoencoders. If you had a pixel value that's just noise, an autoencoder would
+	try to model that noise, while max lik RBm would ignore it and just use the bias on that u.
+A stack of shallow autoencoders regularized w/ weight^2 penalty DO NOT do pretraining as effectively as RBMs do.
+However, "DENOISING AUTOENCODERS" do work as well for pretraining.
+
+Denoising autoencoders add noise to the input vec by setting many of its components to 0. This has a regularizing effect -
+like dropout, but for inputs rather than hids.
+	Since the autoencoder still has to reconstruct these components, it must extract features that capture corrs
+	b/w inputs.
+	The danger w/ normal autoencoders is that if have more hids in 1st layer than input pixels, might just memorize
+	the pixels. Denoising autoencoders can't do that bc of the dropout.
+
+Pre-training w/ denoising autoencoders has comparable perf to RBMs, and is simpler to eval the pre-training bc has
+objective fct whose value is easy to compute, unlike w/ RBMs.
+	Lacks the nice variational bound of RBMs, but that's of little practical imptance.
+`
+Contractive autoencoders - regularize by making activity of the hids less sensitive to inputs. Penalize gradient^2 of each
+hidden activity wrt the inputs. So, hids change slower when inputs change!
+	V good for pretraining
+
+Codes in contractive autoencoders tend to have property that only a small subset of the hids are sensitive to changes
+in the input; and which subset varies w/ diff parts of input space.
+	The active set is like a spare code
+	RBMs behave similarly once trained - saturated us lead to sparse coding.
+
+
+PRE-TRAINING CONCLUSIONS
+
+For datasets w/ few labeled cases but many unlabeled, layer-by-layer pretraining is v helpful for discovering features for
+subsequent discriminative learning
+
+For v large labeled datasets, pretraining is unnecessary even for deep nets. Go straight to supervised learning.
+
+However, v large nets should be pre-trained even if weights are initialized well to regularize them.
+	Repeats that right size of net is one big enough to overfit, that you pull back and keep from doing so.
+
+
+
+
+
+
+
+
+
+
+
+

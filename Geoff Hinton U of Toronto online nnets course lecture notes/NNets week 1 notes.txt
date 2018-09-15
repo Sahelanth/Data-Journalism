@@ -1,0 +1,219 @@
+NNets week 1 notes
+
+MNIST handwritten database is our standard task for the course
+	We know a lot a/b how diff ML algos do on MNIST
+
+Templates that match all handwritten "2"s w/o any overlap w/ "3"s would be v hard to find
+
+Speech recog
+	Convert sound wave into vector of acoustic coefficients
+	Use several adjacent vectors to guess the phoneme being spoken
+		Good system will have many alt models for a given phoneme, and divide each phoneme into multiple parts
+	Decode - sequence of guesses that best fits the data AND also fits a model of the kinds of things people say
+Reduces to predicting outputs from inputs
+
+Bio neurons in cortex:
+	1 axon that branches
+	Dendritic tree that collects input
+	Spike in axon injects charge into dendrite of post-synaptic neuron
+	Axon hillock generates spike when enough charge to depolarize cell membrane accumulates
+
+Synapses work this way:
+	Transmitter mols bind to receptors
+	Receptors change shape
+	New shape allows ions in or out of the membrane, changing state of neuron
+Synapses can adapt
+	Can vary # of vesicles of transmitter
+	Can vary # of receptors
+	Locally-available signals make them adapt, change their strength
+
+How brain works
+	Each N receives input from other Ns (or sensory receptors)
+	A synaptic weight controls each input's effect on receing N
+		Can be + or - weight
+	Weights adapt so whole NN learns to do useful computations
+	Human has ~10^11 neurons, each has ~10^4 weights
+	Weights can affect computation hugely w/in milliseconds
+
+Cortex is modular; diff parts do diff things
+	Likely b/c diff sensory inputs go diff places
+	Cortex looks the same all over, though! This suggests a flexible, universal learning algo
+		THis and rewiring w/ sensory deprivation implies fct is not genetically determined
+	Cortex is made of general-purpose stuff that can turn special-purpose in response to experience
+		Gives nice combo of rapid parallel comp once learn, plus flexibility in what fcts can learn
+
+
+Neural models
+y = output 	z = total input
+
+Linear neuron:
+y = b + sum[xi * wi]
+output = bias + sum[inputs * weights]
+
+Binary threshold (McCulloch-Pitts) neuron
+1. Compute weighted sum of inputs
+2. If weighted sum exceeds threshold, send fixed-value spike
+Are 2 equiv ways to write equation:
+z = sum[xi*wi]
+y = 1 if z >= theta, 0 if z < theta
+or
+z = b + sum[xi*wi]
+y = 1 if z >= 0, 0 otherwise
+
+theta = threshold. b = bias. theta = -b.
+
+Rectified linear neuron
+	Combines linear and binary-threshold
+	Computes linear weighted sum of inputs
+	Output is nonlinear fct of total input
+
+z = b + sum[xi*wi]
+y = z if z >0, 0 otherwise
+So, can make decisions at 0, but also get handy properties of linear systems above 0
+
+Sigmoid neuron
+Gives an output that is a smooth and bounded fct of their total input
+Most common kind to use in NNs
+Typically uses logistic fct:
+z = b + sum[xi*wi]
+y = 1/(1 + e^-z)
+Output is 1 over 1 + e^-[total input]
+Smoothness -> easy to take derivative -> easy learning fcts
+Output 0.5 at total input 0.
+
+Sample problem:
+
+What do diff neurons give if you've got input 2 w/ weight 1 and input -1 w/ weight -0.5, and bias 0.5?
+
+z = b + sum[xi*wi]
+= 0.5 + 2*1 + (-1)(-0.5)
+z = 3
+
+y = z for linear or rectified linear
+y=1 for binary threshold
+y = a little under 1 for sigmoid
+
+
+Stochastic binary neuron:
+Use same eqns as logistic, but for pr of outputting spike, rather than just output
+	Final output is just a 0 or 1
+
+z = b + sum[xi*wi]
+p(spike) = 1/ (1 + e^-z)
+
+Intrinsically random! Tho v large + input means almost certainly 1, v large - input means almost certainly 0
+
+Can do similar trick for rectified linear ouputs
+	Here, output = Poisson rate of producing spikes
+	Actual times at which spikes are produced are random and follow Poisson distribution
+
+
+Learning example:
+Simple algo to train a simple net to recognize digits
+2-layer NN, where top layer represents known shapes, and bottom layer represents pixel intensities
+	Input neurons that rep pixel intensity
+	Output neurons that rep class (digits)
+What we want is for output neuron for a particular shape to fire when show input neurons that shape
+A pixel "votes" for shapes that contain that pixel
+	Each filled pixel can vote for several diff shapes, at diff intensities
+	Shape that gets the most votes wins	
+		Competition b/w the input units!
+How do we display the weights when there are tons of Ns?
+	Give each output its own "map" of the input image, and dispaly the weight coming from each pixel
+	in the location of that pixel in the map
+		Black and white blobs whose area reps magnitude of weight and whose color represents
+		sign of weight
+Now we show the NN an image and increment the weights from active pixels to the correct class
+	That is, make the weights from [input neurons for active pixels] to [output neuron for right class] bigger
+	If we did just this and nothing else, weights would only ever increase
+So then we decrement the weights from active pixels to whatever class the NN guesses
+This trains it to do the right thing, rather than whatever thing random initialization of weights gave it a tendency to do
+When it does the right thing, increments and decrements will exactly cancel, so will stop changing
+
+After several hundred training examples, the maps of weights look much like templates for digits!
+	Much, but not exactly. For ex, 9 weight map has no positive weights in lower half of the map.
+		This is b/c lower half is useless for distinguishing 9 from 7 in the training data
+		So that half can rule out other digits but can't confirm 9
+
+Why is this algo insufficient?
+A 2-layer net w/ single winner in top layer is equivalent to having a rigid template for each shape
+	As you can see from how the weight maps develop
+Winner is template w/ biggest overlap w/ filled pixels
+Simple template matches of whole shapes aren't adequate for all the ways handwritten digits can vary
+
+To learn all the allowable variations of a digit, need feature extraction
+	Need to learn the features the digit is composed of
+
+
+3 types of learning
+Supervised, reinforcement, and unsupervised
+
+1st 1/2 course mainly a/b supervised, 2nd 1/2 mainly unsupervised
+	Reinforcement not covered
+
+Supervised - learn to predict an output when given an input vector
+
+Reinforcement - learn to select an action to maximize payoff
+	Rewards may only come occasionally
+
+Unsupervised - discover a good internal representation of the input
+
+2 types of supervised
+	Each training case has an input vector x and a target output t
+	1. Regression - target output is real number, or vector of real numbers
+		Price of a stock 6 months from now, temp at noon tomorrow
+		Aim to get as close as possible to target number
+	2. Classification - target output is a class label
+		Simplest case is a choice b/w 1 and 0
+		Labeling digits is classification w/ 10 labels
+
+
+How supervised learning typically works
+Start by choosing a model class y = f(x; W)
+	That is, a whole class of candidate models
+	Think of this class as an fct that takes an input vector x, and uses parameters W to map
+	each input vector to a predicted output y
+Learning means adjusting the parameters W to make target output t match actual output y as 
+closely as possible
+	We want to minimize the discrepancy b/w t and y
+	For regression, 0.5(y - t)^2 is a good measure of discrepancy
+		The 0.5 is so when we differentiate this fct, get y-t rather than 2(y-t)
+	Classification calls for other discrepancy metrics
+
+
+Reinforcement learning
+Output is an action (or sequence of actions)
+Only supervisory signal is an occasional reward
+Goal in selecting each action is to maximize expected sum of future rewards
+Usually discount rewards further in the future
+Is hard!
+	Rewards delayed, so hard to know when went wrong or right
+	Scalar reward, not vector, so provides little info on which to base parameter changes
+Sup and unsup can learn millions of parameters. Rein can't.
+Aim for dozens or 1k parameters
+
+
+Unsupervised learning
+Ignored (except for clustering) for ~40 years
+Partly b/c hard to specify the aim of unsup
+	A major aim: create an internal rep of input that's useful for subsequent sup or rein learning
+
+Other goals:
+	Unsup can give a compact, low-dim rep of the input
+		Typical high-dim inputs are on or near low-dim manifolds, so can compress a lot
+			Fewer degrees of freedom in actuality than in initial appearance, which is great!
+		Principal Component Analysis is a form of this!
+			Here, manifold is a plane within higher-dim space
+	Unsup can give an economical high-dim rep of the input in terms of learned features
+		e.g., many binary dims instead of real-number dims. Many binary dims are economical to store
+		Or many real-valued features, most of which are 0
+			For each input, only have to store a few #s
+	Unsup can find sensible clusters in the input
+		Clustering can be viewed as a very sparse code! i.e., one feature per cluster, all features
+		but one are 0 and that feature is 1. (1 = in cluster, 0 = out of cluster)
+
+Possible arrangements scale fast
+	In 28x28 binary image (pixels can only be black or white), are 2^784 possible arrangements
+	1x1 image 2 possible arrangements
+	2x2 16 possible arrangements
+	3x3 512 possible arrangements

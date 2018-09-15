@@ -1,0 +1,329 @@
+HOW TO GENERALIZE BETTER
+
+Overfit when too much capacity for amt of data
+	Reduce capacity w/ smaller net or early stopping
+	Overfitting comes from sampling error
+
+Approaches:
+1. Best: get more data!
+	Almost always best, if have enough comp power
+2. Use model w/ enough capacity to fit true regularities, but not enough to fit spurious regularities
+3. Model avging. Fit diff models that make diff mistakes, avg out
+	Can train each model on diff subset of training set; this is called "bagging"
+4. Bayesian - single nnet archi, but create many diff weight vecs that give good results, and avg
+their predictions
+
+
+Controlling capacity:
+1. Archi. Limit # of hidden layers and units per layer
+2. Early stopping - start w/ small weights, stop before overfits. (Assumes that will find true
+regularities before spurious - fails if this not the case).
+3. Weight decay - penalize large weights. L2 penalty is squared values, L1 penalty is abs values
+4. Add noise to weights of activities
+
+Typically use several of the above methods at once
+
+How to choose metaparameters that control capacity?
+	DON'T do trial and error - that's training on the test set
+DO do cross-validation
+	Divide total data into test, train, validation
+	Trial-and-error on validation is okay as long as only use the test data once
+Can also rotate the validation set - divide total data into 1 final test set and N other subsets,
+train on subsets to get N diff estimates of the validation error rate
+	This is N-fold cross val
+	The N estimates are NOT indep of each other
+
+
+EARLY STOPPING
+Good when have big model on small comp
+	V expensive to keep retraining model w/ lots of data w/ diff penalties on the weights
+Cheaper to start w/ v small weights, and let them grow until performance on val set starts getting worse
+	Hard to decide when to stop, esp if you use just error rate rather than error^2 or cross-entropy
+	So keep going until you're sure you're getting worse, then roll back weights to what they were at 
+	best
+Why do small weights lower capacity? Bc keep units in linear range. e.g. log units don't get to flat area.
+
+A net w/ log units and small values behaves like linear net w/ weights divided by 4, b/c log fct linear
+region has slope ~ 0.25
+
+WEIGHT PENALIZATION
+Std method: L2 weight penalty. Add extra term to the cost fct that penalizes the squared weights.
+	Keeps weights small unless they have big error derivs to counteract it
+	Cost to optimize:
+	C = E + (lambda/2) * [sum over i] (wi^2)
+	cost = error + "weight cost" (lambda) + sum of squares of weights
+		A big weight cost pulls weights smaller
+	When dC/dwi = 0, wi = (1/lambda)*dE/dwi
+		So at minimum of cost fct, weight can only be big if has a big error deriv
+Prevents net from using weights it doesn't need
+	Big unneeded weights tend to fit sampling error, so we don't want them
+Makes smoother model - output changes more slowly as input changes
+If net has 2 v similar inputs, L2 drives it to put 1/2 weight on each rather than all the weight on 1
+	So, less extreme changes in output when change input
+
+
+L1 penalty - penalize abs values of weights. Drives many weights to exactly 0, and allows a few large 
+weights readily, unlike L2. 
+Handy when you want a more interpretable model!
+
+
+CONSTRAINTS AS AN ALTERNATIVE TO PENALTIES
+
+Weights penalize value^2 of each weight separately
+Instead, we can put a constraint on max squared length of the incoming weight vector of each unit
+	"Use fewer units to make your decisions"
+	If an update violates this constraint, we scale down the vec of incoming weights to the
+	allowed length, by dividing all the weights by the same amt
+
+Weight constraints have advantages over weight penalties:
+Easier to set a sensible value
+Prevent hids from getting stuck near 0
+Prevent weights from exploding
+
+When a unit hits its constraint, the effective weight penalty on ALL its weights is determined by whichever
+weights have big grads. Weights w/ big grads suppress weights w/ small grads.
+	This amounts to a flexible, scaling penalty.
+
+USE NOISE AS A REGULARIZER
+Most resesarch is on adding noise to inputs, but there's also a trick where add noise to the activities.
+
+Adding Gaussian noise to inputs of a simple linear net trying to minimize error^2 is equivalent to
+applying L2 penalty to the net.
+	Variance of the noise is amplified by the squared weight before going into the next layer.
+In a simpl net w/ linear output unit connected directly to inputs (no hids), the amplified noise
+gets added to the output.
+
+
+
+Consider three input units i feeding to output unit j
+	Add Gaussian noise w/ mean 0 and std dev sigma to the inputs
+		So each input is xi + N(0, sigmai ^2)
+		Output is yj + N(0, wi^2 sigmai ^2)
+Squared error will be sq error caused by yj plus sq error caused by noise, b/c noise is independent of
+yj
+So minimizing error^2 tends to minimize weights^2 when the inputs are noisy. So, it's like an L2
+penalty, w/ penalty strength sigmai ^2
+
+Note - use E[f(x)] to denote expected value of f(x)
+
+Adding Gaussian noise in lin net is equiv to L2 weight penalty in this simple net. In multilayer nonlin,
+not exactly equiv - may even work better than L2 does!
+
+Adding noise to RNNs input often makes them work better.
+
+
+As mentioned, can also use noise in activities, rather than in inputs, as a regularizer:
+Let's say we make the units binary and stochastic on the forward pass (so, randomish activities) but do 
+back pass as if we'd done the forward pass properly
+	Treating log units as stochastic binary - output only 0 or 1, but pr of outputting 0 or 1 is
+	a log fct of z
+		p(s=1) = 1/(1 + e^-z)
+			probability of outputting a 1
+
+In back pass, use the value of p (rather than 1 or 0), for backpropping error derivs
+If all the units make SMALL contributions to the layer above, this works well
+This method trains slow and looks bad on training set, but generalizes well. Often sig better on test.
+
+BAYESIAN APPROACH
+Instead of looking for most likely setting of params for a model, consider all possible settings and
+determine how likely each is given the data we've observed
+When we see some data, we combine our prior distrib w/ a likelihood term to get a posterior distrib
+
+The likelihood term takes into account how probably the observed data is GIVEN the parameters of the model
+	The likelihood term favors param settings that make the data likely
+	W/ enough data, the likelihood term always "wins" against the prior, so w/ enough data
+	we'll be ok even if we chose a dumb prior
+
+BAYESIAN COIN TOSS
+Our model of a coin has 1 param, p. Each event has prob p of head, 1-p of tail
+If we see 53 heads in 100 tosses, what's a good value for p?
+	Well, maximum likelihood is p=0.53. That's the value of p that makes that observation most probable.
+		Derivation: P(53h47t) = (p^53)(1-p)^47
+		How does pr of observing that data depend on p? Well,
+			dP(53h47t)/dp = (53p^52)(1-p)^47 - 47(p^53)(1-p)^46
+			= ( 53/p - 47/(1-p) ) * ( (p^53)(1-p)^47 )
+			= 0 at p=.53. So the peak is at p-.53, so max likelihood is there.
+
+Problems w/ using max likelihood to estimate params that are most likely to generate the data:
+	If we tossed only once, p=0 or p=1 would be estimate, and that seems dumb
+	If we don't have much data, surely a range/ distrib is better than a point answer.
+So, let's start w/ a prior distrib over param values!
+Let's start w/ a nice uninformative ~uniform distribution~, from 0 to 1.
+
+ |_____|1  y-axis is probability density, x-axis is p
+0|_____|1  Note the area under the "curve" (a straight line at prob density=1) is 1
+	   We deem coins that are 1 all the time, 0 all the time, etc equally likely.
+
+Now we flip a coin. It comes down heads. So, we'll mult the prior pr of each param value by the
+prob of observing a head given that value.
+
+That gives us our posterior destribution!
+	New graph of p vs prob density: a diagonal line, starting at (0, 0) and moving to (1, 1)
+		Eliminates the possibility that coin is always 0, so prob density at p=0 goes to 0
+			Bc p(head) can't be 0 if we observed a head
+	This is an "unnormalized posterior"
+	Now we normalize it to get final posterior. Do this by scaling up all the pr densities so the
+	integral comes to 1, like it was on the prior.
+		A diagonal graph, from (p=0, prob dens = 0) to (p=1, prob dens = 2)
+
+Let's flip again. Now we get a tail.
+	Multiply prior pr of each param value by pr of observing a tail given that value
+	This adjusts the prior to a curve with peak at 1/2 that goes from (0, 0) to (1, 1). 
+		The normalized version has its peak such that area under the curve = 1
+
+Do it 98 more times, and we get a curve with a far steeper peak around 1/2, w/ v little probability
+density far from the peak
+	After 53 heads and 47 tails, peak is at 0.53, but distrib makes 0.5 v likely
+
+Bayes theorem: p(D) = probability of data, p(W) = probability of weights
+p(D)p(W|D) = p(D and W) = p(W)p(D|W)
+	p(W|D) = p(W)*p(D|W)/ p(D)
+	posterior pr of weight vec W given training data D = prior pr of W * pr of observed data given W divided by pr of observed data
+
+Pr of observed data is the integral over all possible values of W of p(D|W)
+	That is, p(D) = [integral over w of]( p(W) * p(D|W) )
+p(D) is the integral over all possible values of W of p(D|W)
+The denominator needs to be the sum of the numerator over all possible values of W to make this a pr
+distrib that adds to 1
+
+BAYESIAN INTERPRETATION OF WEIGHT DECAY
+
+Instead of computing posterior pr of every possible setting of params in a model, we can just look for 
+single set of params that is best compromise b/w prior and observed. This is called maximum a 
+posteriori learning, or MAP learning.
+
+Gives us a nice expl of what's going on when we use weight decay to control capacity of a model.
+
+When we do supervised max likelihood learning, we try to find a weight vec that minimizes squared resids.
+This is equiv to finding a weight vec that maximizes the log pr density of the correct answer
+To see this, let's assume the answer is generated by adding Gaussian noise to the output of the net.
+Run the net, then add some noise, then ask what's the pr that the result is the correct answer.
+
+The model's output y is at the center of a Gaussian. We want target t to be near it, to have high
+pr under that Gaussian.
+	y is the model's estimate of most probable answer
+
+The pr of producing the value t given that network gives an output y is the pr density of t under a
+Gaussian centered at y
+
+yc = f(inputc, w)
+	yc is the output of net on training case c
+
+p(tc | yc) = ( 1/sqrt(2*pi*sigma) ) *e^-( (tc - yc)^2 / 2*sigma^2) )
+target value for training case c relates to a Gaussian centered at yc (centered at the net's output)
+
+-log p(tc | yc) = k + ( (tc-yc)^2 / 2*sigma^2 )
+	k is a constant, created from the ( 1/sqrt(2*pi*sigma) ) in non-logged version
+So, we use the eqn as a cost fct, and this cost fct is just a problem of minimizing distance^2 between
+output and target
+
+In general, you can reinterpret minimizing error^2 as a probability problem; equiv to maximizing log prob
+under a Gaussian
+	(So, when is maximizing log prob easier than just looking for minimal error^2? I guess when there
+	are exponents)
+
+Proper Bayesian approach is to find full post distrib over all possible weight vecs. This is hideous for
+more than a few nonlin weights, so we approx (often using MCMC).
+For now, let's just find the most probable weight vec
+	Start w/ a random weight vec and adjust in dir that improves p(W|D) ( = p(weight vec given data) )
+		This is only local optimum, not nec global!
+Easier to work in log domain. If we want to minimize a cost, use NEGATIVE log prs
+
+Why we maximize sum of log prs:
+Want to max PRODUCT of prs of producing the target values on all the diff training cases.
+If the output errors on diff cases c are independent:
+p(D|W) = [product over c of all]p(tc|W)
+	= [produce over c of all]p(tc | f(inputc, W) )
+So that's the product of the prs of producing target given the weights
+
+Log fct is monotonic! SO we can max sums of log prs much more easily than product of raw prs
+
+log p(D|W) = [sum over c] log p(tc|W)
+
+In maximum a posterior (MAP) learning, we wanna find set of weights that optimizes tradeoff b/w fitting
+our prior and fitting the data.
+So, Bayes: p(W|D) = p(W)*p(D|W)/p(D)
+cost = -logp(W|D) = -logp(W) - logp(D|W) + logp(D)
+	logp(W) is log pr of W given prior but no data
+	logp(D) is an integral over all possible weight vecs, to make it not depend on W
+
+
+Minimizing the weights^2 is equiv to maxing log pr of the weights under a zero-mean Gaussian prior
+
+Consider a Gaussian centered at 0, and w hopefully near 0
+p(w) = ( 1/sqrt(2*pi*sigma) )*e^-(w^2)/(2sigmaw^2)
+-logp(w) = ( (w^2)/(2*sigmaw^2) ) + k
+	k is a constant based on the normalizing term of the Gaussian
+	-logp(w) = squared weights scaled by twice the variance of the weights
+
+So:
+-logp(W|D) = - logp(D|W) - logp(W) + logp(D)
+               				a constant
+  				
+C* = (1/2*sigmad^2)*[sum over c](yc - tc)^2 + ( 1/(2sigmaw^2) )*[sum over i]wi^2
+	||						||
+Gaussian noise w/				Gaussian prior for weights w/
+variance sigmad added to			variance sigmaw
+output of the model
+
+Cost fct:
+C = E + ( sigmad^2 / sigmaw^2 ) * [sum over i] wi^2
+	E = (yc - tc)^2
+	( sigmad^2 / sigmaw^2 ) is the ratio of variance in data to variance in weights, = the weight penalty
+		So in this framework, weight penalty is NOT arbitrary!
+cost = error + weight penalty + sum of weights squared
+
+MACKAY'S METHOD OF FIXING WEIGHT COSTS	
+
+A way to det weight penalties to use in a net w/o using a validation set.
+Based on idea that we can treat weight pens as doing MAP estimation so that magnitude of weight pen relates
+to tightness of prior distrib over the weights.
+
+We can fit the weight pens and assumed weight in the net to get a method for fitting weight pens
+that doesn't req val set, and therefore allows us to have diff weight pens for diff subsets of the weight
+in the net, which would be v expensive to work out using val sets
+
+To do this, need to estimate variance of the output noise
+AFTER we've learned a model that mins error^2, THEN we can find best value for the output noise
+
+Best val for output noise is val that maxes pr of producing target answer after adding Gaussian noise to
+the nnet output
+	Find this value using the variance of the residual errors
+
+Can also estimate the variance of the Gaussian prior on the weights
+	To do this: learn a model w/ some initial choice of variance for the weight prior, then use
+	method called "empirical Bayes"
+	Set variance of the Gaussian prior to be whatever makes the weights the model learned most likely
+		This violates Bayesian assumption of using the *data* to update your prior!
+		Do this by fitting a 0-mean Gaussian to the 1-dim distrib of the learned weight variance
+		Take the variance of that Gaussian, use it for our prior
+		We can easily learn diff variances (so diff weight penalties) for diff layers in the net
+		this way
+Do this w/ ALL the training data, don't hold out a validation set.
+
+So, method:
+1. Start with a guess for the noise variance and a guess for the weight prior variance
+2. Grad descent learning, using ratio of those variances trying to improve the weights. 
+3. Reset the noise variance to be the variance of residual errors, and reset the weight prior variance to be
+the variance of the distrib of the actual learned weights
+4. Repeat
+
+If a particular input unit has no useful info for getting target output, this method WILL push that unit's
+weights toward 0 (correct behavior!) bc that input unit will have small error derivs bc its irrelevance
+means changing its weight won't change its error much
+
+Gaussian weight prior will always push weights toward 0 unless there's a big error deriv to oppose it (ie
+changing that weight made the error worse, so need to change it back)
+
+
+
+
+
+
+
+
+
+
+
+
+

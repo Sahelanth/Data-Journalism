@@ -1,0 +1,193 @@
+Modeling char strings using Hessian Free modeling
+	Training data from Wikipedia, try to predict next char!
+	Need multiplicative weights
+
+Pre-processing text to get words is a hassle
+	Morphemes (prefixes + suffixes), multi-piece words like "New York" - which may depend on context,
+	e.g. "new York mayor" in England
+
+An approach: RNN w/
+
+1500 hdiden units   --->  1500 hidden units -> softmax of predicted distrib for next char
+			 ^
+			/
+		character
+
+So: hid + a char are input to next hid, which goes to output of Pr distrib for what next char will be.
+
+Backprop log Pr of getting correct char thru layers back to beginning of the string
+
+A lot easier to predict 86 chars than 10k words
+
+A better approach: think of all char strings as forming a tree. e.g. a section of this tree will be:
+		...fix
+	...fixi		...fixe
+   ...fixin
+
+The number of possible nodes grows exponentially w/ the length of the string
+	We'd like to put a Pr on each possible letter-addition, on each transition.
+		e.g. pr of adding an i given an x, pr of adding an e given an x.
+		But exponential growth makes this hard to store
+
+But recall, number of possible state vectors in an RNN also grows exponentially
+
+So, RNN where each node is a hidden state vector, and next char must transform it to a new node
+	And diff nodes can share structure - look similar - bc RNNs use distributed representations!
+	e.g. we can encode the knowledge that ....fixi is likely to be in a verb, and use that when
+	faced w/ ...doi, ...maki, etc
+	We can get i to operate on the part of the state that encodes that it's a verb
+Next hidden rep MUST depend on BOTH current char AND current hidden rep
+
+Multiplicative conns allow next hidden rep to depend on both current and and current hiden rep
+
+
+We can use current input char to choose what hid-to-hid weight matrix we use, rather than just using
+it as extra additive input to a hid
+
+The naive way to do that is to have each char determine every single weight in the matrix.
+	That's a ton of params to learn. 86 char * 1500 hid 1 * 1500 hid 2, for ex
+		For 86 chars each affecting a fully connected hidden 1 to hidden 2 setup
+		Overfit likely
+Better way to get same kind of multiplicative interaction: transition matrix for similar chars should
+be similar. e.g. 9 and 8 should have similar weight matrices. (So should vowels?)
+
+We're going to use "factors."
+
+Each factor (you use multiple):
+Group A is multipled by weight vector uf and feeds to factor f
+Group B is multiplied by weight vector wf and feeds to factor f
+Result is multiplied by weight vf and feed to group c
+
+Cf = (B^T * wf) ( A^T * uf) * vf
+Input vec to group C = scalar input from group B * " group A * weight vector vf
+
+Each factor first computes a weighted sum for each of its input groups
+	Scalar product of vector A w/ weight vector u, scalar product of vector B w/ weight vec w,
+	then multiply these #s to get outgoing weight vec V
+
+So, a factor is a bottleneck that lets you reduce parameters. Naive thing to do when you have 1000 hids
+and 86 chars is 1000*86 weights.
+Factor has 1000 + 86 + 1000 weights
+1000 input from hids, 86 input from chars, 1000 input to next layer
+
+Another way to think a/b factors: each factor defines a rank 1 transition matrix from a to c
+	cf = (b^T * wf) (a^T * uf) * vf
+		Takes two scalar products, multiples them, then multiples by another weight vec
+We can rearrange it to take the *outer product* of the weight vec u w/ weight vec v to get a matrix,
+then treat the scalar product of b and weight vec w as a coefficient on that matrix
+	cf = (b^T * wf) (uf * vf^T) * a
+Summed over all factors, total input to group C is:
+C = ( sum over f of [ (b^T * wf) (uf * wf^T)])*a
+	C is next hidden state, a is current hidden state
+
+So, system we set up is:
+
+		     uf     vf
+1500 hdiden units   ---> f  ---> 1500 hidden units -> softmax of predicted distrib for next char
+			 ^
+			/wkf
+		character (1 of 86 chars appears at each time step; each char has a corresponding weight)
+
+Each factor, f, defines a rank 1 matrix uf*vf^T
+Each char, k determines a GAIN wkf for each of these matrices
+You multiply each rank 1 matrix by its gain, then sum up the resulting scaled matrices for all the diff
+factors, and the sum is your transition matrix.
+
+
+Boleslaw Leszek Osinski
+M
+Boleslaw Leszek OsinskiMentor · 6 months ago · Edited
+
+Hi Bill,
+
+A factor is a weighted sum of the hidden units at time t and the input. Instead of setting a different weight matrix between hidden units (t) and hidden units (t+1) for each input choice (which produces a giant matrix each time), you just have to compute the hidden (t) times their weights (which is scalar) and the input times it's weights (which is also scalar). This is computationally more efficient.
+
+You can think of a factor as a temporary virtual node (or a hidden unit), that allows you to pass from time t to t+1. They also refer to it as a "transition matrix" from time t to time t+1. You get to choose how many factors you have (and that choice is an educated guess, usually around the size of the number of hidden units).
+
+On a technical note, Prof. Hinton rearranges the product of hidden (t) times their weights to an outer product, so that the factor can be written as a matrix multiplied by the hidden (t) which is mathematically more elegant. So in essence, the factor is the matrix F in this equation: hidden(t+1) = F*hidden(t), where * denotes scalar product.
+
+Training set for char model: 5 million strings of 100 chars each. For each string, start predicting at
+the 11th char. (1st 10 are input to predict w/).
+Using this, Ilya Sutskever made best single model we have for char prediction. (Ensembles can beat it).
+Can balance quotes and brackets over long distances. Models that rely on matching previous contexts can't
+do that, bc they're unlikely to have an identical ~35-char string that is that quote stored.
+
+To use it generatively:
+Start w/ its default hid state
+Give it a "burn-in" seq of chars and let it update hid state after each char
+Then look at pr distrib it predicts for next char, pick a char from that distrib, and tell the net that's
+the char that actually occurred
+Let it keep picking chars till bored
+
+Can pick up tons of weak semantic associations! Cabbage near vegetable, Plato near Wittgenstein
+
+Huge RNNs w/ huge training sets trained w/ backprop thru time are best word-predictors
+	RNNs need much less data to get given level of perf than other models do
+		And improve faster as training data grows!
+
+
+Recall echo state nets initialize an RNN such that it has a big reservoir of coupled oscillations
+	Converts input into states of the oscillators
+	Only thing it has to learn is how to couple the output to the state of the oscillators
+	Don't have to learn hid-hid weights, or even input-hid weights!
+	Basically one huge hid state
+
+CAN initialize like echo state and then train w/ backprop thru time for even better results
+
+Make early layers random and fixed, and just learn last layer, which is a linear model that uses
+ [inputs transformed by those random layers] to predict the target outputs
+	Similar to old work w/ perceptrons!
+	A big random expansion of the input vec can help a linear model learn! Can make it possible to
+	fit a good model when couldn't fit a good model on the raw input
+		SVMs are basically this!
+
+BUT, have to set the random conns v carefully to avoid having oscillations go to 0 or to huge numbers
+	Set hid-hid weights so that the length of the activity vector stays a/b the same after each
+	iteration. (Formally: spectral radius set to 1).
+		This lets inpt echo around recurrent state for long time
+	Use sparse connectivity (most weights = 0, a few weights big) to create lots of loosely
+	coupled oscillators
+Choose the scale of the input -> hid conns v carefully. They need to drive the loosely coupled oscillators
+w/o wiping out info from the past that the oscillators contain.
+
+Good news: b/c are just learning a lin model, training time is real low. Can experiment rapidly, try
+many diff scales for the weights and sparsenesses of the input + hid conns. (Yes this is itself a
+kind of learning loop and yes you should automate it).
+
+
+
+Example echo state net task:
+Input: a real-number value that varies w/ time that specifies the freq of a sine wave.
+	e.g. 2 for a while, then 1, then 4...
+Output: a sine wave w/ the freq specified by the current input
+Learning method: fit a lin model that takes states of hids as input and produces a single scalar output
+
+Input:		    Dynamical reservoir of oscillators:          Output:
+
+     ------     |
+____|      |    |   ---> [big messy causal diagram]  -------> e.g. sine wave of freq 2, then of 3, then 1...
+           |____|
+
+There is feedback from output back to reservoir - helps tell the reservoir what output's been produced so far
+
+
+
+Echo state net pros:
+Can train v fast b/c just fit a lin model
+Demonstrate importance of intializing hid-hid weights sensibly
+	Hid-to-output weights are easy to learn, so not impt to initialize them well
+Can model and predict 1D time series well
+
+Cons:
+Bad for high-dim data like speech of video
+Need many more hid units for a giventask than an RNN that learns the hid-hid weights does
+
+Initializing like an ESN but then actually learning the hid-hid weights works great!
+	RMSprop w/ momentum is good here.
+
+
+
+
+
+
+

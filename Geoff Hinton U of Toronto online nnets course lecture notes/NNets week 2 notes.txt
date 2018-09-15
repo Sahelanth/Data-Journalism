@@ -1,0 +1,250 @@
+NNets week 2 notes
+
+Main NN architectures
+Architecture = way a NN is connected together
+
+Most common archi is feed-forward
+	input -> hidden -> output
+
+Recurrent are interesting; can have long-term memory, oscillations. But v hard to train!
+
+Symmetrically connected - weights are the same in both directions
+
+Convention: input is 1st layer, output is last layer
+
+FF NNs w/ more than 1 hidden layer are called deep NNs
+FF compute a series of transformations. Things that were similar in 1st layer may become
+dissimilar in 2nd layer, and vice versa
+	e.g. in speech recog, want same thing same by diff speakers to become more similar as go thru 
+	net layers, and diff things said by same speaker to become less similar as go thru net layers
+Activities in each layer are nonlinear fct of those in previous layer
+
+
+RNNs contain directed graphs
+	i.e. can get back to start by following arrows
+
+RNNs w/ mult hidden layers are like RNNs w/ single hidden layer w/ some hidden -> hidden connections missing
+
+RNNs are great way to model sequential data
+
+
+	OUT	OUT	OUT	
+	 ^	 ^	 ^
+   ->	HID ->	HID ->	HID
+	 ^	 ^	 ^
+	IN	 IN	 IN
+
+At each time step, state of hidden units determines state of hidden units at next time step
+	Single-layer RNN is like a deep FF NN spread over time.
+		Diff time steps in RNN do what diff hidden layers in deep net would do
+		Differences: RNNs get new input at each time step, and use same weights in each step,
+		where a deep net could have diff weights in each hidden layer
+RNNs *can* remember info in their hidden layer for a long time, but hard to train them to do so
+
+RNN text predictor: predicts a Pr distrib for next char given previous chars, then samples a char
+from this distribution
+	Rarely gives non-words, and sentences tend to remain on a single theme. And good syntax.
+	Impressive given that it's doing 1 char at a time, not word at a time!
+
+
+Symmetrically connected nets
+	Like RNNs but connections b/w units have same weight in both directions
+	Easier to analyze than RNNs
+	More restricted than RNNs; can't model cycles
+
+
+
+Perceptrons
+
+There is a standard way to recog patterns in stats
+1. Convert input vector into a feature activation vector
+	Use hand-written program to define the features
+2. Learn how to weight each of the feature activations to get a single scalar quantity
+3. If that scalar is above a threshold, decide the input vector is an example of the target class.
+
+A perceptron works like that.
+Are mult kinds, but standard perceptron architecture has:
+Decision unit
+Multiple feature units with learned weights that feed into the decision unit
+Multiple input units, with hand-coded weights that feed into the feature units
+There's learning in the weights from feature units to decision unit, but no learning from input units to feature units
+
+Perceptron learning is still useful today when feature vectors are huge - millions of features
+
+In perceptron, the decision unit is a binary threshold neuron
+	COmpute weighted sum of inputs from other neurons, add a bias, output 1 if bias plus weighted sum
+	exceeds 0, else output 0
+
+Can learn biases w/ same rule we use to learn weights!
+	Take every input vector, and add a new component containing 1 to each feature
+		A bias is just like a weight on an extra input line that has an activity of 1
+	Recall a threshold is just the same as a negative bias
+		thresh = -bias
+
+
+Perceptron learning procedure
+1. Add an extra component w/ value 1 to each input vector. The "bias" weight on this component
+   is negative of the threshold.
+2. Pick training cases. Can do this using any policy that gets every training case picked in a
+   reasonable amt of time
+	Once pick a case:
+		If the output unit is correct, leave its weights alone
+		If output unit wrongly gives 0, add input vector to weight vector
+			That is, if there's a false negative, add input vec to weight vec
+		If output vec incorrectly gives 1 (false positive), subtract input vec from weight vec
+This is guaranteed to find a set of weights that gets right answer for all training cases - IF any such set exists
+	For many interesting problems, no such set of weights exists
+ 	Good feature selection often determines whether such a set exists!
+
+Example:
+input x = (0.5, -0.5) connected to neuron w/ weights w=(2, -1), bias b=0.5, target t=0
+prediction y = 1 if w*x^T + b >= 0, 0 otherwise
+sum = sum[xi*wi] = 0.5*2 + (-0.5)(-1) = 1.5
+1.5 - b = 1.5 - 0.5 = 1.
+But t = 0.
+
+So! Incorrect 1, so subtract input from weight.
+(2, -1) - (0.5, -0.5) = (1.5, -0.5)
+And subtract 1 from the bias. 0.5 - 1 -= -0.5. (I guess that's what "activity" means - input value).
+
+
+Geometric view of perceptrons
+
+What happens when a perceptron learns?
+Consider a "weight space," high-dim space whose dims are the possible settings for each weight
+In this space, each point is a particular setting for all the weights; and training cases are planes
+Learning is trying to get the weight vector on the correct side of all the training planes
+
+Weight space:
+1 dim per weight
+A point is a particular setting of all the weights
+Switch out threshold for bias. Then, each training case is a hyperplane through the origin.
+	The weights must lie on 1 side of this hyperplane to get the answer correct
+
+The plane of a training case is perpendicular to the input vector with correct answer for that training case
+
+Scalar product of that input vector with a good weight vector will be positive (if correct answer is 1),
+and so will make the output binary threshold neuron give 1
+
+When right answer is 1:
+Angle that good weight vector forms w/ input vector is less than 90 degrees
+	Gives positive scalar product, so makes the output 1
+Angle that bad weight vector formw w/ input vector is greater than 90 degrees
+	Gives negative scalar product, so makes the output 0
+
+The inputs constrain the set of weights that give correct classification results
+
+When the right answer is 0:
+Angle that good weight vector forms w/ input vector is greater than 90 degrees
+	And so will correctly give neg scalar product to thresh neuron, so thresh neuron will correctly give 0
+
+Now, let's look at the space when there are 2 training cases, one where right answer is 0 and one where
+right answer is 1.
+	A single training case splits the space in half, 1/2 good weights 1/2 bad weights
+	But this splits out a cone of good weights surrounded by bad weights
+	If there are any weight vectors that get correct answer for all cases, they're in a hyper-cone
+	w/ tip at the origin
+		Of course, there may be no pts that are on the right side of ALL the planes
+		In which case we can't learn weights that give right answer for all training cases
+
+Note that the avg of two good weight vectors is itself a good weight vector
+	If the avg of 2 solutions is itself a solution, then the problem is "convex"
+	Convex problems are easy to learn on!
+
+Proof that perceptron learning procedure will eventually get right answer. This will help us understand
+why/ how perceptrons work
+
+	  db
+      da|-------0 good vector		RIGHT
+--------|------------------------------
+	|				WRONG
+	0 current vector
+
+Consider the distance^2, da^2 + db^2, b/w any good ("feasible") weight vec and the current weight vec
+Every time the learning algo updates the weights, it will do so in a way that brings the current
+weight vec closer to a feasible weight vec
+	This is how the perceptron updates every time it makes a mistake
+	Issue - movement toward 1 feasible vec may be movement away from another feasible vec
+
+So, consider a "generously feasible" weight vec that lies w/in the feasible region by a margin
+at least as great as length of the input vector
+	W/in cone of solutions, a sub-cone of generously feasible solutions
+	Each time perceptron makes a mistake, distance^2 to all generously feasible weight vecs
+	DOES decrease. And decreases by at least the length^2 of the input vector
+	So after a finite # of mistakes, weight vec will reach the feasible region if generously feasible region exists
+		Might not reach generously feasible region!
+		Any feasible region DOES have a generously feasible region
+
+
+LIMITATIONS OF PERCEPTRONS
+
+W/ good features, can do a lot!
+	W/ bad features, can do little
+	Can do nearly anything if use a huge # of hand-chosen features
+		But that's not really feasible, and won't generalize well, b/c new cases req new feature
+		units and you won't know what weights to put on these new feature units
+There are strong limits on what a perceptron can learn to do
+
+A binary thresh output neuron can't tell if two single-bit features are the same!
+(1, 1) and (0, 0) both give 1
+(1, 0) and (0, 1) both give 0
+This is b/c the 4 input-output pairs give 4 inequalities that can't simultaneously satisfy
+theta=threshold
+When both are 1, 1*w1 + 1*w2 >= theta
+When both are 0, 0*w1 + 0*w2 >= theta
+When mismatched
+	1*w1 + 0*w2 < theta
+	0*w1 + 1*w2 < theta
+Add up first two inequalities to get w1+w2 > 2*theta
+Add up second two inequalities to get w1+w2 < 2*theta
+No way to satisfy! So, can't get all 4 cases right
+
+
+Geometric way to understand limits:
+Consider a "data space" where axes are components of an input vector
+	Each point is a particular input vector
+	A plane is a weight vector
+	So, like inverse of the weight space we considered before
+	The weight plane is perpendicular to weight vector, and plane's distance from the origin equals
+	the threshold
+
+The positive and negative cases can't be separated by a plane. At most can get 3 right.
+	"Not linearly separable."
+
+
+Perceptrons can't tell apart simple patterns when those patterns are "translated with wrap-around."
+	COnsider pixels as the features
+	Can a binary thresh unit tell apart diff patterns that have same # of black pixels?
+		Not if the patterns can translate w/ wrap-around
+		e.g.: 	- -- -
+				- -- -
+			-	-- -
+			are all same pattern
+When patterns have same number of pixels, total input to decision unit is:
+[number of possible translations of pattern]*[sum of all the weights]
+	If 2 patterns can be translated in same number of ways, can't discriminate them
+	To discrim, would need all cases of pattern A to give more input to the decision unit than
+	all cases of pattern B.
+		Which can't be true, b/c sum total input to decision unit from pattern A equals
+		sum total input to decision unit from pattern B
+
+CAN distinguish a class of 4-pixel patterns from a class that includes both 1- and 3-pixel patterns
+	e.g., set weight of each pixel to 1, bias to -3.5
+	Then any 3-pixel pattern has total activation of 1+1+1-3.5 = -0.5
+	Any 1-pixel pattern has total activation 1-3.5 = -2.5
+	Any 4-pixel pattern has total activation 1+1+1+1-3.5 = 0.5
+	So, correctly classifies!
+
+Whole point of pattern recognition is to recognize patterns despite transformations like translation
+A perceptron can't LEARN to do this if the transformations "form a group," which trans w/ wrap-around do
+	You CAN hand-code multiple feature units to recognize transformations of informative sub-patterns.
+		Need spearate feature unit for each possible position!
+
+Networks w/o hidden units can learn only v limited range of input-output mappings
+	Extra layers of linear units don't help
+	Fixed-output/ hand-coded nonlinear units don't help much, b/c are labor-intensive
+Need mult layers of adaptive, non-linear hidden units
+	To train these, need a way to adapt ALL the weights, not just the last layer as in a perceptron
+	Learning the weights going into hidden units is equiv to learning features. This is hard b/c,
+	unlike output units, can't directly tell what hidden units should do - when they should be
+	active vs inactive

@@ -1,0 +1,311 @@
+Modeling sequences overview
+
+Predict, in simplest case, next from previous
+	Regression does this
+	Hidden units and "hidden state" allow more interesting
+		Linear dynamical systems, hidden Markov models
+			Don't need all details
+
+Often want to turn an input sequence into an output sequence in another domain.
+	English to French, or soundwaves to words
+	When there's no separate target sequence to look for, we can get a teaching sequence
+	by trying to predict the next term in the input sequence
+		Target output sq = input sq w/ advance of 1 step
+Predicting next term in sq blurs distinction b/w sup and unsup learning
+	Methods from sup, but no need for separate teaching signal
+
+
+Non-nnet sequence models
+
+Autoregressive. No memory.
+	Predict next term from a fixed # of previous terms using "delay taps"
+input(t-2)  and  input(t-1) feed in to input(t) using w(t-2) and w(t-1)
+Previous inputs can be scalars, or whole vectors
+Linear autoreg model takes weighted avg of these
+The more previous time steps you decide to use, the more weights you need to learn
+
+Can do FF NN that's like autoreg but w/ nonlinear hidden units
+input(t-2) and input(t-1) feed in to hidden unit that feeds in to input(t)
+
+
+If we give a model a hidden state w/ its own internal dynamics, we get models w/ memory!
+	Generative models
+	Can store info in hidden state for long time; no simple bound to how far back info can affect,
+	unlike in memoryless
+If dynamics are noisy + way it generates output from hidden is noisy, can't know exact hidden state!
+	CAN infer pr distrib over space of all possible hidden state vectors
+
+There are 2 kinds of hidden state model where inferring pr distrib over space of all possible hidden
+state vectors is tractable
+	Of course, this reqs assuming out data fits our model
+	Linear dynamical systems, hidden Markov models. RNNs are neither of these.
+
+
+Linear dynamical system
+Engineers love these
+
+	  time ->
+  output  output  output
+    ^       ^       ^
+->hidden->hidden->hidden
+
+Hidden state has linear dynamics w/ Gaussian noise, and produces observations using a linear model w/ 
+Gaussian noise
+	So, hidden state evolves probabilistically
+Can also have "driving inputs" that feed directly to hidden states
+To predict next output, NEED to infer the hidden state! Use these to predict noisy trajectories
+Useful property: a linearly transformed Gaussian is also a Gaussian. So distrib over the hidden state
+given the data so far is itself Gaussian. (This distrib is a full covariance Gaussian).
+	Compute the distrib over hidden state using Kalman filtering!
+
+
+Hidden Markov models
+Comp scis love these
+Discrete rather than Gaussian
+Hidden state is a 1-of-n choice. Probabilistic transitions b/w states, controlled by a transition
+matrix
+	Trans matrix is like "if state 1 at t1, pr of state x at t2 is z"
+Outputs are also stochastic, so we can't be sure which state produced a given output
+So states are "hidden"
+Pr distrib across n states is easy to represent w/ n #s
+To predict next output, use dynamic programming to compute pr distrib across hidden states
+
+Fundamental limitation: at each time step must select 1 of its hidden states. So w/ n hid states can
+only remember log(n) bits a/b what it generated so far.
+Consider predicting the 2nd 1/2 of an utterance from the 1st 1/2. Need syntax fit (number and tense
+agreement), semantics fit, intonation... speech has too many properties to easily keep in memory!
+	100 bits of info req HMM w/ 2^100 states!
+
+
+RNNs can remember much more efficiently
+Powerful b/c 2 key properties:
+1. Distributed hidden state = several hidden units can be active at once, so remember several diff things
+at once, so store info a/b past efficiently
+2. Nonlinear dynamics, so can update hidden state in complicated ways
+
+Turing complete!
+Deterministic, unlike LinDynSys and HMM
+The *posterior Pr distrib* over hidden states given observed data so far for LDS and HMM IS a 
+deterministic fct of the data (even though the output itself is not)
+	Hidden state of an RNN is like the pr distrib over hidden states of those models
+
+
+RNN behaviors
+	Can oscillate - good for motor control, eg walking
+	Can settle to point attractor - good for retrieving memories
+		Hopfield nets are implementation of this
+	Can behave chaotically, depending on weights - often bad for info processing
+Can learn to implement many small programs, running in parallel, interacting for complicated effects
+
+A bitch to train, b/c of that computational power
+
+
+TRAINING RNNS W/ BACKPROP
+
+Recall RNN is equiv to FF w/ 1 layer for each time step where keep reusing weights in each layer
+
+Example: 
+RNN w/ 3 neurons and a time delay in using each conection.
+   
+   w1     w2
+  -----V ----V
+N1     N2   N3
+ A-----  A---
+   w3      w4
+
+
+This is equiv to:
+
+t=3   N      N     N
+      w1\ /w3 w4\ /w2
+	 X	 X
+t=2   N      N     N
+      w1\ /w3 w4\ /w2
+	 X       X
+t=1   N      N     N
+      w1\ /w3 w4\ /w2
+	 X	 X
+t=0   N      N     N
+
+(Seems diff? In 1st, no one N takes w3 and w4 as input, though N2 takes w1 and w4).
+
+
+
+Can easily modify backprop algo to include linear constraints b/w weights
+Compute grads as usual, then modify grads to meet constraints
+e.g. if w1 must equal w2,
+	then delta w1 must equal delta w2
+	Compute dE/dw1 and dE/dw2
+		and use dE/dw1 + dE/dw2 for both
+
+
+Backprop thru time algo uses that
+Can think of this algo in time domain:
+	Forward pass builds a stack of the activities of all the units at each time step
+	Backward pass peels activities off the stack to compute error derivs at each time step
+	After backward pass, add up all derivs at all the diff times for each weight, and update
+	all copies of that weight by the samt amt, either sum or avg
+
+Need to initialize initial activities of all the hidden and output units
+	Can actually treat them as learned parameters like weights, instead of just initializing to
+	arbitrary values! How? Well, DO start all the units w/ random guess. Then at end of each
+	training sequence, backprop thru time all the way to initial states, and use results as
+	initial state on next training sequence
+
+Are many ways to provide input to RNN
+	-Specify initial states of all units
+	-Specify initial states of subset of the units
+	-Specify states of the same suset of all the units *at every time step* - this is the natural
+	way to model most sequential data
+
+Specifying targets for an RNN:
+	-Specify desired final activities of all units
+	-If want it to settle to an attractor, specify desired activities of all units for last few steps
+		Easy to add in extra error derivs from later time steps as backprop
+	-Specify desired activity of a subset of the units
+		Think of these as output, others as input or hidden
+
+To get RNN to sum up a sequence of numbers, input state of one unit at every time step, bc there's one
+input value (= the next number in the sequence) at each time step
+	One output value, at last time step, so specify target for one unit at the final time step
+
+RNN TRAINING EXAMPLE
+Toy example
+RNN can learn to add up 2 binary #s well
+	FF nets can't learn some obvious regularities of binary addition
+For FF net, must decide max # of digits of each input and the output in advance, to have a unit for
+each digit
+More imptly, FF uses diff weights in diff places in a long number, even tho pattern to learn is the same
+	Can train FF on binary addition successfully, but they don't generalize well on this task
+
+Gives example of finite state automation, for deciding how to do binary addition
+
+RNN: 2 input units, 1 output unit
+	Receives 2 input digits at each time step
+	Desired output at each time step is the output for the column that was input 2 time steps ago,
+	b/c takes 1 time step to update the hidden units based on the 2 input digits, and another for
+	the hid units to cause the output
+
+e.g.
+ 00110100
++01001101
+=    0001
+ <-time
+
+3 hidden units are sufficient for an RNN binary adder. Learns faster with more.
+	Fully interconnected; conns in both dirs that don't necessarily have same weight
+	Input units have FF units that let them vote for next hidden activity pattern, and hids have FF
+	conns to the single output unit
+
+The 3 hids learn 4 distinct *patterns* of activity. These patterns - NOT the units themselves - correspond
+to the 4 nodes in a finite state automaton that does binary addition
+	Automaton is in 1 state at each time
+	HId units are in 1 *vector of activities* at each time
+
+RNN can emulate state automaton, but exponentially more powerful!
+	N hidden units allow 2^N possible binary activity vectors
+	Only N^2 weights tho, so may not make full use of all the power to rep diff states it has
+Impt when input stream has 2 separate things going on at once. FSA would have to square its # of states to
+handle both; RNN can just double its # of hidden units, squaring its # of binary vectors
+
+
+WHY IT'S HARD TO TRAIN RNNS
+Exploding vanishing gradients
+
+RNN training has big diff b/w the forward and backward passes
+
+Forward pass: use squashing fcts (eg logistic unit) to prevent activity vectors from exploding
+
+Backward pass is completely linear! If double error derivs at final layer, all error derivs will
+double when backprop
+	Use the slope of logistic fct at a particular pt, so a fixed slope tangent to the log fct
+
+During the backpropagation, the net is a system of linear eqns. And linear systems tend to explode to
+huge value or vanish to 0.
+	As we backprop thru many layers, small weights -> grads shrink exponentionally, big weights
+	-> grads grow exponentially
+	Smaller problem in FF than in RNN b/c most FF have few hidden layers. But RNNs trained on 100+
+	time steps (a long sequence) are like a deep FF, easily get such problems
+
+How to avoid?
+	CAN initialize weights carefully to avoid, but it's hard, and even then it's hard to get
+	"long-range dependencies" = clear relations b/w current target and input from many timesteps ago
+Vanishing gradients happen when there are attractors
+Initial conditions make little difference in final result... UNLESS start v close to boundary b/w 2 diff
+attractor regions, which is the exploding grad problem!
+
+
+4 GOOD WAYS TO LEARN AN RNN
+1. LSTM. Make the RNN out of little modules that are designed to rememer values for a long time
+
+2. Hessian Free optimization - a fancy optimizer that can deal w/ vanishing grads well, by detection
+directions w/ a tiny grad but even smaller curvature
+	HF Optimizer Martens + Sutskever 2011
+
+3. Echo state nets. Initialize weights v carefully, such that the hidden state has a huge reservoir of
+weakly coupled oscillators. So input reverberates for a long time. Then try to couple those reverbs
+to output. Only the hidden -> output weights need to learn! 
+
+4. Use momentum to learn all the weights, but initialize like in echo state nets.
+
+
+LSTMS
+Create special modules that let info be gated in, then gated out when needed, but not interfered with by
+incoming signals in the meantime.
+
+The dynamic state of a NN is a short-term memory. LSTM lets states be preserved for a long time.
+
+V good for handwriting recog!
+
+Hochreiter + Schmidhuber 1997. "Memory cell" using log and linear units w/ multiplicative interactions
+Info gets into the cell whenever its logistic "write" gate is turned on. Input to that cell determines
+when write gate is on vs off.
+Info stays in the cell so long as its "keep" gate is on. Again, log gate w/ input determining when
+it's on.
+Info is output from the cell when its "read" gate is on.
+
+This architecture lets an RNN remember things for hundreds of time steps.
+
+The memory cell stores an analog value.
+Can think of it as feeding itself that value w/ a weight of 1 at each time step; in fact, that's a 
+good way to implement it.
+
+Memory cell pieces: keep gate; write gate; stored value; read gate
+Keep gate keeps stored value
+Write gate feeds input from rest of RNN to stored value
+Read gate uses stored value to send output to rest of RNN
+
+Use logistic units bc nice derivs for backprop
+Learning:
+
+Forward pass:
+t=1 Set keep gate to 0, write gate to 1, give memory cell input 1.7
+t=2 Then set keep gate to 1 to store value, read and write gates to 0 bc aren't inputting or outputting
+t=3 Then set read gate to 1 so can output, output 1.7
+
+Err deriv gets prop'd back from when retrieved to when stored, w/ no attenuation or increase b/c weight
+is 1.
+	If log gates, there is some attenuation, but not much
+
+
+READING CURSIVE HANDWRITING
+
+RNN. Input is (x, y, p) coords of the pen, where p is pen up or pend down
+Output is a sequence of chars
+
+Graves + Schmidhuber 2009 used sequence of images rather than coords, but same method
+
+Film showing LSTM working:
+Row 1 shows when chars recog'd
+	System never revises its output. It delays hard decisions a bit, to get more info on them.
+Row 2 is states of a subset of memory cells
+	Rest to empty when recogs a char
+Row 3 actual writing
+Row 4 is the gradient backprop'd from the current char all the way back to the x and y coords. Lets you
+see which bits of data influence the decision.
+
+
+
+
+
+
