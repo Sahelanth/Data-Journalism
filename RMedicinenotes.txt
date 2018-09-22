@@ -1,0 +1,1859 @@
+---
+title: "R Medicine Markdown Notes"
+author: "James Pitt"
+date: "September 7, 2018"
+output: html_document
+---
+
+
+
+####ADD LINKS TO SLIDES
+#Embed tweets like so:
+<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr"><a href="https://twitter.com/kevin_purcell">@kevin_purcell</a> Please feel free to try (click the menu Embed Tweet here) and let me know if it does not work.</p>&mdash; Yihui Xie (@xieyihui) <a href="https://twitter.com/xieyihui/status/758679942217334784">September 7, 2018</a></blockquote>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+
+Send it here: https://twitter.com/kaneplusplus/status/1038607599346884609
+
+
+#Day 1
+
+##Predicting platelet usage
+###Rob Tibshirani
+
+Slides will be available after conference
+  Starting p. 32 http://statweb.stanford.edu/~tibs/ftp/jsm2017.pdf
+
+Paper - "Big Data MOdeling for Platelet Usage", PNAS
+
+
+Current system:
+Each day, manually estimate # of platelet bags they need, estimated manually
+5 day shelf life, safety-tested for 2 days -> usable life is only 3 days, discarded after that
+  Other blood products have ~40 day shelf life, easier to plan the use of
+Wastes 1400 units per year, 8% of total ordered
+Rarely any shortage, but expensive, bc tend to overorder and bc making up shortfalls on short notice is expensive
+
+So, how can we do better?
+
+We've got daily platelet use over 2 years
+Response: number of platelet transfusions on a given day
+Covariates include complete blood count data (ie all the other cell types), census data (loc of pt,
+admit date, discharge data), surgery schedule data (scheduled surg date, type of surg)...
+  Lots of data cleaning needed!
+  Tons of missing data. 30% of pts no CBC measurement at all, census data often had no match to CBC,
+    surg schedule data same
+    (Audience member suggests the lack of 30% of CBCs was a good thing - suspects the missing 30% were elective blood draws       from people unlikely to need platelets anyway.)
+
+So, decided to use aggregated features. Hospital-level by day rather than pt-level data.
+
+Feature construction:
+CBC measurement: for each day i and feature j, count the number of pts below the 1st
+quartile of the pop. Use the avg of the past week. (11 features)
+Census: for each day i, count total number of pts at a loc j in the hospital (26 features)
+PLT transfusion record: yi total number of PLT used at day i, use avg of past week yi at day i when predicting (1 feature)
+Surgery record: count number of scheduled surg at day i+k when making prediction for day future k days (17 features)
+Day of the week info: Monday,...,Sunday
+
+61 features total
+
+Tried Lasso (he invented it!) and it was a useful starting point
+Its penalty is sparsity (feature selection), convex problem (yay), glmnet package makes it easy
+
+<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr"><a href="https://twitter.com/KayokoShioda/status/1038085135944638465">September 7, 2018</a></blockquote>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+First approach:
+Supervised learning model via lasso. Start at day 200, train model, retrain every month
+Tried diff k windows of previous k days to use to predict
+
+Problem: loss fct is symmetric. Predicting fewer units than will really need is worse than predicting too many.
+
+
+2nd approach: waste minimization
+Predict waste rather than total usage
+Emphasis shifts from predicting platelet usage to predicting how many to order
+
+3 days total need (linearly predicted from features), number to order, waste, actual remaining,
+constraint that fresh bags remaining must be greater than or equal to c0 (no shortage allowed)
+
+Important features they selected included PLT transfusion record, day of week, others in slides
+
+Applying to the 2 years of historical data, using the model would give 2% waste, rather than actual 8%, with no shortages
+Would save Stanford $350k/ yr
+Deployed at Stanford in July
+Starting out by running in parallel with existing system for 4 months to get confidence in performance before switching over.
+
+<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr"><a href="https://twitter.com/DaiweiTang/status/1038086749665337350">September 7, 2018</a></blockquote>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+Are distributing an R package so blood centers and hospitals can train the model on their own local data. 
+Github repo bnaras/SBCpip
+May be applicable to other time-limited resources
+
+
+Credits to his collaborators
+  Medical collaborators - Tho and Gombur
+  Stats grad students - Guan and Tian
+  Statistician /software engineer - Narashimhan
+    Lots of time going to the blood center and talking to the pathologist about what particular features mean
+  Data prep and cleaning was long and crucial, and having med collaborators who were comfortable trying out stats and knew R    was very helpful  
+  
+Have a Shiny app for doing the predictions and training model on your data
+
+##FFTrees
+###Nathaniel Phillips (from Roche)
+
+Simple, transparent predictive decision algos for both ML and clinical decision applications
+slides at https://ndphillips.github.io/RMedicine_2018
+
+His background is in psych; interest in diagnostic checklists. How do you determine who should be dx'd with depression with limited info and limited time?
+
+Chicago Cook County Hospital - overworked, many pts have criteria that suggest heart attack
+  Allocating pts to ER vs coronary care unit. Tradeoffs include cost, danger
+  Physician decisions: 90% of potential HF pts sent to CCU. Only 25% actually had heart attacks.
+  Defensive medicine, too many false alarms
+  
+  Solution: "fast and frugal decision tree (FFT)" following Green and Mehr 1997
+  ST segment changes? If yes CCU, if no chief complaints of chest pain? if yes any other factor (INTG, MI, ST)? If yes CCU, if   no ER
+  This was very successful! Much better predictions than before, and a previous attempt that required drs to carry around       calculators and do regression model on the fly id not catch on for obv reasons
+  
+
+<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr"><a href="https://twitter.com/r_medicine/status/1038088443023290369">September 7, 2018</a></blockquote>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+  
+An FFT is a highly restricted decision tree.
+  Each node must have exactly 2 branches, where at least 1 branch leads to an (immediate) decision leaf
+  Have been v successful in psych - e.g. for depression, nearly as predictive as regression model
+  Military checkpoints use an FFT for determining if vehicles are hostile - operational research, Keller and Katsou 2018
+  
+Benefits of FFTs:
+  Dead simple to communicate
+  Can be implemented 'in the head'
+  Compare to (and incorporate) expert knowledge
+    If expert 
+  Focus on a few critical pieces of information
+  Low risk of overfitting - no false sense of magical abilities
+    No one mistakes this for perfect and gets frustrated when it's not, unlike a lot of ML
+  Communicate errors. Transparently.
+    Easy to tell when/ why errors are occurring when they do
+
+Package for them: FFTrees
+  1.3.5 on CRAN, 1.4.0 on Github, need Github version for this code to work
+
+Heart disease example:
+2 heart disease datasets, train and test, create a model to predict (binary prediction)
+```{r}
+#  Create an FFTrees object
+heart_FFT <- FFTrees(formula = diagnosis ~.,         # Criterion
+                     data = heart.train,             # Training data
+                     data.test = heart.test,         # Testing data
+                     main = "Heart Disease",         # Optional Labels
+                     decision.labels = c("Healthy", "Diseased")) 
+# FFTrees class
+class(heart_FFT)
+
+print.FFTrees(heart_FFT)
+plot(heart_FFT, stats = FALSE)
+plot(heart_FFT, stats=TRUE)
+```
+
+"speed" stat - on avg, how many bits of info are used before making a decision?
+
+
+The plotting is motivated by decision theory research that found incorporating icon arrays gets better results than presenting probability numbers (Galesic, et al. (2009). Using icon arrays to communicate medical risks)
+
+<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr"><a href="https://twitter.com/Sahelanth/status/1038092447665070080">September 7, 2018</a></blockquote>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+  
+
+The algo makes multiple trees spanning ROC space, chooses the one that maximizes the goal you made. Has differences from traditional decision tree making algos.
+Can use the tree=X arg to explore diff trees
+```{r}
+
+#Great sensitivity, terrible specificity
+plot(heart_FFT, data="test", tree-6)
+
+#Great specificity, terrible sensitivity
+plot(heart_FFT, data="test", tree-6)
+
+```
+
+Can also pass it costs, so it tries to minimize cost of data acquisition. e.g. if getting someone's calcium level costs 100.9 and getting their sex costs 1, it's probably gonna check sex at a earlier step than calcium level.
+It can also try to minimize *outcome* costs rather than *cue* costs
+
+
+FFTrees is for 2 class prediction problems. Can't handle a 3 class prediction problem. Use rpart for that.
+
+Specifying a custom tree to test it out is easy
+
+
+```{r}
+# Specify an FFT in words
+ihaka_fft <- "If age > 55, predict True.
+              If cp != {a}, predict False.
+              If chol > 300, predict False."
+              
+# Include as my.tree
+FFTrees(formula, data,
+        my.tree = ihaka_fft,    # Specify my.tree
+        main = "Ihaka FFT")              
+```
+
+
+
+Compared FFT to some UCI ML Repository datasets vs more complex things like CART and random forests
+
+Prediction sim: on avg FFTs use 1.83 features and ignore 86% of all data
+FFTs achieved 98% of the accuracy of random forests
+  What drove accuracy was the dataset more than the specific algo, as often the case
+
+Thinks of two diff "data worlds" slow vs fast
+Slow world: complex models are better. Costs don't scale much, accuracy and utility are tightly coupled and scale slowly
+Fast world: simple models are better. Accuracy increases quickly with a few pieces of info but then diminishing returns in accuracy; diminishing returns in utility as increase accuracy; costs exponentially increase as increase accuracy
+Which algos to use depends what "world" you're in. Simple algos like FFtree are good in fast world.
+
+
+
+##Developing Random Forest Models for Medication Response
+###Peter Higgins (U of Mechigan)
+
+
+<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr"><a href="https://twitter.com/r_medicine/status/1038093408940765184">September 7, 2018</a></blockquote>
+    <script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+Taking data from the Epic EMR for med response and implementation
+Epic is capable of more than billing, but its capabilities are often underused
+
+Thiopurines - old chemo drugs, low doses are v effective immunosuppressants that work relaly well in IBD in about 30% of pts
+  Which pts?
+  How do you know if drug is working vs spontaneous resmission?
+
+Dan Present proposed using patterns in the lab monitoring results, rather than expensive metabolite results
+  Can spot immunosuppression from patterns routine tests look at.
+    e.g. blood counts - white cell counts decreased, size of red cells increased
+
+Hard part was defining who was responding and who wasn't. Lots of "expert grunt work"" combing through outcomes.
+
+Study sample: 395 cases, 240 indvidiuals
+All individuals who got metabolite test on same day as lab values, and adequate clinical data for response
+Their random forest model substantially outperformed the metabolite test alone
+  0.85 vs 0.59 AUROC
+
+Also predicted 2 other clinically impt outcomes
+  "Shunting" - where drug ends up on an alt, toxic pathway (1 in 300 people), AUROC 0.80
+  Non-compliance - AUROC 0.81
+
+There were several large RCTs on IBD in 2008-2012 where many "active" pts by symptom scores didn't have elevated CRP or ulceration on endoscopy - i.e. didn't have inflammation. So, unlikely to respond to anti-inflammatory Rx.
+So FDA got skeptical of symptom scores in IBD, insisted on move to "biological remission" measures
+Overhauled using BR rather than symptoms as gold standard.
+The metabolite test didn't work at all for the BR composite measure, but random forest did!
+
+
+Clinical outcomes: as hoped, got fewer clinical events in pts who got the desired immune suppressed pattern.
+Clinical outcomes changed after achieving predicted BR.
+
+External validation on the YODA data repository. Clinical trial data on thiopurine vs Remicade vs combo therapy.
+  2010 NEJM, combo was better than either alone
+Their BR model predicted response well
+
+
+Impt side note: using random forests with missing data
+Lab data is sometimes missing. 
+Usually phlebotomist error, which thankfully approximates missing completely at random
+Platelet clumping -> unreliable platelet counts
+Hemolysis -> unreliably high potassium values
+Compared several imputation methods for dealing with missing data in an RF.
+MissForest was the best - robust up to 30% MCAR (better than MICE or nearest neighbor)
+
+Data pipeline:
+user orders ThioMon in epic EMR, a "superorder' that activates orders for other results
+data sent as csv to R server virtal machine
+If too much missing data, reports test failure; single missing values are imputed w/ warning message
+R server uses results to calc immune suppression score, nonadherence, and shunting
+Results saved on server, any failure to run autosends message to IT team
+
+Soft rollout 2011, full in 2013
+
+Metabolite testing with 6-TGN and 6-MMP is covered by most insurance, has a CPT code, mostly covered by insurance, but not a good test
+Saved around $120k per year in external costs (600+ metabolite tests at $200)
+Internal algo nearly free, saved money, happy pathologists
+
+Challenges and lessons learned:
+User feedback crucial (Kim Turgeon MD)
+Show users the dta, walk tem through results in specific patients
+  Preferably w/ "why this result in this pt"
+
+Result reporting:
+Initially model scores (incl negative #s), then probabilities, neither of which users liked
+Recalibrated: score over 100 is good, lower score is bad.
+Limit complexity! Don't give more info than is needed
+Provide limited interpretation with branching logic. Give them a paragraph explaining what the test result means! GOOD result vs LOW result
+  Only show shunting score and nonadherence score if are in low range, not if not
+  Drs will probably use this under 10times per year, explaining it to them a year ago won't stick. Need to make the results     very easy to interpret, not give them info they don't need.
+
+
+Example with another drug: vedolizuma in ulcerative colitis
+Phase 3 trial data - clinicalstudydatarequest.com is awesome, YODA registry also
+Predictors of response: all labs gathered, plausible clinical factors
+All models are terrible at predicting response at baseline (AUROC 0.6), but okay at predicting response at week 6
+
+A data viz - bar graph of the predictor variables, bars tagged by color with red for higher value worse, blue for higher value better, purple for nonmonotonic response
+
+Clinicans like simple models, cutoffs. 
+
+Conclusions:
+Early response patterns in lab tests can predict longterm responses in drugs
+  Baseline data not v helpful in 3 diff drugs they looked at
+  Lots of rigorously collected lab data out there - but plan for how to deal with missing data
+  Implementation - req friends on the IT team, talk to them weekly
+Talk to frontline users a lot and answer their questions
+
+##tidymodels
+###Max Kuhn
+
+Slides: https://static1.squarespace.com/static/51156277e4b0b8b2ffe11c00/t/5b75871e21c67c985a06f481/1534428959053/RPharma_18_Kuhn.pdf
+
+
+Laying out consistency problem:
+There are 2 primary methods for specifying what terms are in a model; not all models have both.
+99% of model fcts automatically generate dummy vars
+Sparse matrices can be used... sometimes
+Many package developers don't know much about the language and omit object oriented programming and other core R components
+
+Huge between-package inconsistency in syntax for computing predicted class probabilities.
+  Part of why he developed caret was so there'd be consistency in how to specify models
+  
+tidyverse tries to solve individual problems, and make packages inter-compatible in ways that make these solutions compatible
+  caret is not like that - tries to solve tons of diff problems at once
+
+Design for humans! "Help me not hate your package."
+
+Goals for tidymodels:
+1. Encourage empirical validation and good methodology
+2. Smooth out diverse interfaces
+  No one should have to implement their own 10-fold crossval fct again
+3. Build highly reusable infrastructure
+4. Enable a wider variety of methodologies
+
+Goes to address both retrospective and prospective issues
+
+
+Current modeling packages:
+broom
+dials (tools for creating and validating tuning parameter values)
+infer (statistical inference)
+recipes (preprocessing - can create model matrices that incorp feature engineering, imputation)
+rsample (resampling)
+tidyposterior (Bayes Things)
+tidytext (hell yeah)
+yardstick (contains tools for evaluating models)
+
+
+Illustrates how broom, unlike base R modeling functions, doesn't introduce row names and thus make it hard to work on the results of your model
+
+recipes: dplyr-like utility for:
+defining roles of vars (e.g. outcome, predictor)
+One or more steps are specified that do various ops like centering, iputation, feature extraction, term specification, re-encodings. (Look up a tutorial! Make my keras scripts less of a horrorshow!)
+Gives example modeling blood-brain barrier crossing of a drug
+
+infer package - v readable interface, esp for non-statisticians
+You specify a hypothesis!
+Here, permutation test for BBB example above
+Returns a standard dataframe you can put in ggplot or whatever
+Really nice visualization fct for two-sided tests
+
+Principles of modeling packages:
+
+Separate the interface that the modleer uses from the code to do the computations. They serve 2 v diff purposes
+Allow multiple interfaces - formula, x/y
+User-facing interface should use the most appropriate data structures FOR THE DATA, not the most appropriate data strs for the computations. e.g. factor outcomes vs 0/1 indicators, data frames vs matrices
+type="prob" for class probabilities
+Use S3 methods
+The predict() method should give standardized, predictable results
+
+Will provide GitHub repos with template packages that can be used to meet these guidelines to make it easy for package devs to adhere to these.
+
+Next steps:
+Hash out principles of modeling fcts - looking for contributors
+parsnip: a unified interface to models. This should significantly reduce the amt of syntactical minutia to memorize
+embed - addon for recipes to encode high-cardinality categorical vars
+pipelineish str for model specification
+
+Audience q - MLR universe (R ML stuff that ties in to caret). tidymodels stuff won't use same interface, but aim to make it easy to develop existing packages into tidy versions.
+
+##Sequential Decision Making for a Disease Diagnostic Algorithm
+###Remi Besson
+
+His poster proposal for it: http://2017.ds3-datascience-polytechnique.fr/wp-content/uploads/2017/08/DS3_posterID_112.pdf
+
+
+Trying to detect rare disease prenatally from ultrasound
+
+300 possible symptoms to look at.
+
+State machine: presence, absence, not looked at yet for each symptom, action check next symptom
+
+Integrate experience and expert data into model, use it for planning, implement policy, use policy to build a better model
+
+Used reinforcement learning to minimize number of questions posed before diagnostic can be made
+
+
+##Visualizing and Analyzing Circadian Rythms of Infants via Activity Data
+###Xinyue Li
+
+https://ww2.amstat.org/cgi-bin/fileviewer.cfm?filename=jsm2018presentations%5C%5CCC%2DWest%2D223%5C20180731%2DTuesday%5C1400%2DPDT%5CXinyue%2DLi%2D40989%5C215751%2E0%2D75730%2DXinyue%2DLi%2Epdf&Outputfile=329843-1&1.07179550031
+
+
+Accelerometers on fitbits, etc. Use acceleration signals for info on physical activity
+Intensity, duration and frequency; daytime activity and nighttime sleep patterns.
+
+Prefer objective measures to self-reported physical activity for obvious reasons - but how do we use it?
+
+Focus here was on circadian rhythm. Daily sleep-activity patterns, periodic information
+
+Data here: Actiwatch data from infants and toddlers at 6, 12, 18, 24 months
+Wrn on ankles for 7 consecutive days
+Studying development of circadian rhythms, and physical development
+
+Used the R bigmemory package!
+
+```{r}
+library(bigmemory)
+library(readr)
+ind_data <- big.matrix(init=0.0, nrow=200, ncol=120960, type="double", backingfile="ind_data.bin",
+                       descriptorfile="ind_data.desc", )
+#some other parameters
+```
+
+Visualization tools based on trelliscope.js package, to make it easy to examine activity for each individual
+Comparing individual infants' activity to overall average for all, and to individuals' own daily means
+
+Aim: identify changes in daily activity patterns and describe the formation of circadian rhythm
+
+
+##Developing Analytical Software for Clinical Trials with R (Medidata)
+###Steven Schwager and Jason Mezey
+
+Steve:
+Start with how few make it through the pipeline - currently 9.6% make it from Phase 1 to approval
+
+Improve clinical trial planning, execution, data management, and analysis
+Want analytics for all aspects of a trial, and for portfolio of trials and at industry scale.
+Trial execution - site performance, recruitment and retention, data generation (complete and accurate)
+Data management challenges - data collection (EDC) and quality assurance; data integration from diff sources (traditional site and lab, omics, mHealth, imaging, RWD, and additional data)
+High-quality data collection and management, and integration of data 
+
+Medidata: analytical software many developed and implemented in R and SAS
+
+Focus in this talk: data quality and genomic data in R
+
+R has major strengths in power, flexability, developing innovative methods
+
+Issues with big data: "5 Vs". Volume, variety, velocity, veracity, value
+
+Variety: continuous, ordinal, nominal, time series, images...
+Bivariate relationships reveal outliers that are in range for each component but not for the pair
+Many potential types of anomalies
+
+Can use ML to flag outliers
+
+Every single one of 40 studies, even after a lot of prep, and substantial data inconsistencies
+Within and between CRFs, unreported adverse events, etc.
+
+Studies are NOT random sample. Most EDC data arecorrect, but errors can have a sig impact on speed and success of a study
+
+Case where a site had bizarrely consistent lab values. Investigated: site had been entering fake data for 2 years without being detected. Need to be able to detect things like this earlier!
+
+26% of avoidable data quality issues found across 10 studies had potential to delay drug approval.
+
+
+Jason:
+Cornell prof, focused on genomic data
+
+Genomic data is hard bc effects are all very small, and often v conditionally dependent.
+  Hard to pull out anything actionable
+  The good news is in clinical trials, we *can* control conditions and get actionable info
+  
+2 drivers are putting genomics in clinical trials now:
+  1. Plunge in cost of genotyping
+  2. Success rates in clinical trials: if you include a good biomarker, you can triple your success rate (per a       meta-analysis). There are rich biomarkers left to be discovered in genomics that can improve success of clinical trials.
+  
+Challenges for academia and industry: pipelines and processes are not optimized for genomic data
+One lab doesn't have enough person-hours to do all the analyses they want. This is true everywhere. Every bioinformatics group has more requests for analyses than they can meet.
+Audit trails for what analyses have been done and how are hard.
+Speed, efficiency, audit trail, communication.
+
+Medidata is v good at ingesting and centralizing data.
+  Medidata is largely an EDC company.
+  Has invested heavily in MEDS - way of integrating data from lots of diff sources, not just data from RAVE
+  Mapping (standardization) - great tools for doing this. Making data usable for analysis.
+
+Python doesn't have nearly the capabilities for bio data analysis that R does yet.
+
+Clustering example for genomic and clinical data - subtypes that have different response rates to drug
+  Visualized in t-SNE
+    Easy to do this in R, hard in Python
+Regression trees for survival data - again, easy in R, hard in Python.
+  Used for making survival curves with censored data
+
+
+Medidata wants people who can make a shiny app or analyze large data sets.
+
+
+
+## 	Machine learning analysis of maternal pregnancy clinical notes to predict newborns at risk for neonatal abstinence syndrome
+###Joseph Chou
+
+Neonatal abstinence syndrome
+
+Bag of words model for each mothers' maternal clinical notes during the first 2 trimesters of pregnancy
+
+Lots of class imbalance, like many clinical classification problems.
+
+57105 unique unigram word features. Thaaat's a lot of predictor values.
+TF-IDF'd them.
+
+Predictive model fitting:
+binary outcome modeling via penalized logistic regression
+Elastic net (glmnet)
+Predictor matrix of 5554 pts x 57105 TF-IDF word features
+Sparse input matrices are supported in glmnet, which is good
+
+
+Great feature selection! Reduced it down to 9 unigram word features all of which are obviously related to narcotic use. Having it discover these features rather than pre-specify them was nice.
+AUROC 0.916 on training set, 0.930 on test set
+73-78% PPV, 99% NPV
+
+Only used notes from first 2 trimesters of pregnancy, not 3rd
+Goal was to ID mothers while still pregnant
+
+Another use case: point of care on newborns after delivery. For that, have 3rd trimester data too, and even better PPV and NPV.
+
+Generalizable: using TF-IDF predictor matrix to ID features associated with other outcomes worked really well!
+Spotted features that predict preterm delivery (triplet, monochorionic, twins...); large for gestation newborns (words related to diabetes)
+
+Simple NLP of unstructed clinical notes can yield well-performing predictive models that are of clinical utility
+
+Spare and interpretable word features that req minimal prior knowledge, minimal subject matter expertise, no manual chart review (automated data extraction from EHR)
+
+Applications including m
+
+```{r}
+
+```
+
+
+##How to Ask and Answer your Research Question using Electronic Data System data
+###Eran Bellin
+
+Works at Montefiore
+
+System they've been using with R
+
+Temporal relationships are critical. Did events happen in certain interval of time from each other? During a specific calendar period when specific interventions were available (like 1950 vs 2010)? During another event (e.g. diabetic hospitalized vs out of hospital)
+
+Help the user structure his question so it is answerable - often v hard!
+Reduce near-infinite possible questions to tractable reusable patterns that can be sequentailly invoked to cover a broad swathe of qs
+Be self-documenting so you know what you have asked and can share it
+Build prgressively more complex analytic objects from more primitive ones
+
+Looking Glass Clinical Analytics built at Montefiore, has trained over 1000 people, more than 250 peer reviewed papers enabled
+
+Riddles in Accountable Healthcare book has some vignettes
+
+Info must by patient value centric
+Payment volume centric: how many admissions in 2011?
+Patient value centric: how many unique individuals admitted in 2011?
+How many visits for hypertension vs how long does it take us to control hypertension
+How much do we spend on drug X vs how rapidly did pts improve on drug x
+
+Spreadsheet rep of the cohort: medical record number and index datetime of when pt qualified to be part of this cohort
+
+
+Often have questions like "what % of new diabetic pts were controlled in 2010"
+There were ases like a new pt accepted at the end of the year, who is not controlled yet, bc the year ended. Dumb cutoffs are misleading. Want to do a cohort, not actual-date. Ask who was under control in a paritcular time from their start, not within a particular year.
+
+
+Also has a book called How to ask and ansquer questions using electronic medical record data
+
+
+##Genomic Data Analysis with R and Bioconductor (Genentech)
+###Michael Lawrence
+
+Most of his slides are here: https://www.bioconductor.org/help/course-materials/2017/BioInfoSummer/bioc-bioinfosummer-2017.pdf
+
+
+Large scale software engineering, and how to translate research software to larger platforms.
+
+Challenges in genomics software development:
+
+
+Distilling scientific software - prototype, to infrastructure, use that infra to build other better prototypes
+
+Data scientists as bridge b/w engineers and bench biologists. Roles are and should be fluid, though! 
+
+Data analysis -> method prototyping -> platform integration
+equiv to programming in the small, medium, lrage from "Extending R"
+
+Challenges to sci programming in the large:
+Integrate indep developed modulesinto mplatform
+Trans analyses and prototypes to software, transitable interfaces
+Scalability thru object-oriented abstractions
+
+Genomics workflows rely on a bunch of different tools. 
+bedtools - a command line program, v popular for genomic range manipulation
+Tons of very specific arguments break the abstraction and modularity you want. There wouldn't *be* so many diffs tools if weren't so many diff options people want.
+A bedtools solution took shell, GNU parallel, awk,sed, perl, python, and then R to make a heatmap. Had side-efects in .jaccard, pairwise.txt, pairwise.mat. 
+
+Tools are difficult to build, install, and run.
+
+Bioconductor! Unified platform.
+
+Defining a fct for Jaccard statistic (amt of intersection over amt of union to get similarity bw ranges)
+  mcmapply to compute in parallel
+
+
+```{r}
+se <- SummarizedExperiment(
+  assays,
+  rowdata,
+ ##etc 
+)
+```
+
+
+plyranges package - a transition into coding in bioconductor. Side effct of building the bioconductor infrastructure
+
+Happy about the transition they're seeing
+An issue is that a lot of people submit to bioconductor, but don't build on top of other packages in bioconductor. Feels they're doing well on modularity, evolvability, and reliability, but not on usability.
+Biconductor is complex. 143 different classes, and even ones as simple-sounding as "Ranges" have 28 different methods.
+
+Taking cues from dplyr for how syntax should work.
+
+genes %>% group_by(seqnames)
+
+Goal: extend dplyr to genomics, a more complex problem domain, to achieve the accessibility of bedtools.
+
+GRanges is a tidy data structure - table where every row is an observation, etc.
+
+github.com/sa-lee/plyranges - a dplyr-based API for computing on genomic ranges
+Extends relational algebra with genomic notions
+Large set of visible verbs acting only on the core data strs
+Most of the work is being done by Stuart Lee
+
+exons %% flank_downstream(2L)
+exons %>% anchor_3p()%>% mutate(width=2*width)
+
+Aims for a flat API - many functions with explicit names, few arguments.
+
+Reimagine overlap/ nearest neighbor as table joins.
+
+Want to help people go all the way from programming in the small to programming in the large. Making it possible to start on Granges with a style they're familiar with and move on.
+
+
+
+
+Scalability thru deferred evaluation and the hailr package
+
+Lazy evaluation with substitute(arg) enables handy things like auto-assignment of column labels in plot()
+Deferring computations at the data structure label can be v helpful
+For some promise "x":
+head(sort(x))
+  Dispatch (S3/S4)
+  Sort()
+  Builds up an abstract syntax tree behind the scenes as it goes, of what we're going to perform, serializes it or passes it to an external paralleized system.
+  
+
+Hail is a platform for distributed genomics on Apache Spark. Initially for genetics esp GWAS but becoming more general.
+Defines MatrixTable, an analog of SummarizedExperiment
+  Does interesting stuff behind the scenes w/ own memory management, heavily optimized
+
+hailr is not publicly released yet. Maps bioconductor and base R APIs to hail versions. HailDataFrame, HailExperiment, HailPromise, SparkObject, SparkDriver (depends on sparklyr)
+
+Bioconductor does a lot of "duck typing" - if it quacks like a duck it is a duck. DataFrame allows anything "vector-like" to be a column, for example
+  SummarizedExperiment allows anything "matrix-like" to hold assay values
+  This meshes nicely with the lazily evaluated "promises" based on Hail
+
+Related developments: DelayedArray, ALTREP.
+
+
+##Teaching Survival Analysis to Clinical Collaborators
+###Emily Zabor (Memorial Sloan Kettering, Columbia biostats)
+
+https://github.com/zabore/r-medicine/blob/master/2018_teaching_survival.pdf
+
+
+Tips and tricks to communicate results
+
+The most common qs in cancer research relate to disease survival. Time to event outcomes, survival analysis.
+There IS a lot of diversity in this kind of data. Time to recurrence, time to certain outcomes after occult breast cancer, DNA damage response mutations and overall survival.
+
+Survival analysis is a complex stat procedure, so impt to communicate clearly. 
+Be ready with examples
+Use detailed graphics
+Accompany impt numbers with interpretations. Never just have a number alone.
+
+Example of a dataset w/ censored data: lung dataset from the survival package.
+Contains subjects w/ advanced lung cancer.
+
+The central vars for a surv analysis are time (survival time in days) and status (1=censored, 2=dead in this data)
+
+It's easier to treat a Kaplan-Meier curve as easy to understand, but that's not necessarily the case.
+ggsurvplot fct from the survminer package
+First, just describe what's on the plot! "The x-axis is time and the y-axis is the survival function"
+Step fct where each step down reps a time at which one or more events occurred
+Censored subjects are repped by a tickmark
+Survival fct calc'd at each time as ratio of subjects who did not exp the event by that time to the total number of subjects still at risk.
+
+Explaining censoring: best way is in the context of a clinical trial.
+
+Why do we need specialized methods to analyze time-to-event data? Censoring (bc they DO provide some info even if their event time is unknown!)
+
+Collaborators often ask if they can report the percentage of events out of the total study population. The answer is no. If just divided the number of events by number of subjects, resulting % is misleading.
+Survival curve is lower when there is censoring during followup time. If there were no censoring, the raw % of patients still alive would be fine. But w/ cesoring, a naive estimate will be incorrect, leading to an overestimate of the overall survival probability. (The censored subjects fall out of our "risk set", our at-risk population").
+
+The 1-year survival probability is 0.41, but where does that number come from? Gives a walkthrough of how to build up an annotated survival curve.
+  Using glue() fct to annotate plots is great
+  
+Collaborators often ask what the median survival time is. Again, can use annotated survival plot to explain where that nmber comes from. Arrows then text annotation.
+Inline R code in reports to incorporate reproducible text into reports alongside graphical examples.
+
+Collaborator asks why can't just estimate the median time to event among those who had the event. Incorrect bc censored subjects contribute info bc we know their event occurred after the censoring time! Again, starting with case with no censoring and then showing the case where there is censoring is great.
+
+
+http://www.emilyzabor.com/tutorials/survival_analysis_in_r_tutorial.html
+
+
+##From REDCap data to NIH Enrollment Tables
+###Peter Higgins
+
+Very often people don't know they need to do an NIH progress report until the last minute. Need a fast workflow.
+
+Used REDCap API, created a fake demographic database that can teach with.
+
+Can access like so:
+
+```{r}
+fake_redcap_demodata <- REDCapR::redcap_read_oneshot(readcap_uri = "https://")
+#see slides
+```
+
+Can wrangle w/ dplyr and magrittr. case_when to recode data into more interpretable names is very helpful.
+
+Need to convert from tidy data back to an untidy table of counts.
+  From single obs to table of counts
+
+Data wrangling plan
+janitor() package is very helpful, esp the clean_rows fct
+Lays out a flowchart of data wrangling plan in advance.
+
+flextable is very good with R Markdown, and can output from there to MS Word or Powerpoint
+  Publication-quality, pretty!
+  
+  Code at github.com/higgi/ #skipped quickly
+  
+  codified package will be on CRAN next week, temporary version is on U of Mich site.
+  
+  github.io/codified/articles/
+  
+  keyring package to securely use tokens
+  Use of RedCapR package to extract ata via API
+  janitor::tabyl for creating a D counts table
+  tidyr::complete to fill in all combos of factors
+  flextable, kableExtra for making format pretty
+    Save directly to word and PPt with the officer package
+
+
+##Teaching Reproducible Clinical Data Analysis to Medical Doctors
+###Stephan Kadauke
+
+Lead-in: many doctors do not know the difference between t test and chi-squared test. Doctors estimate their ability to tell whether correct statistical test was used at 2 out of 5.
+
+What are the issues that make it hard for clinicians to do data analysis well?
+  Stats and CS are not premed reqs. (Physics is though).
+  TIME CONSTRAINTS. Any new thing clinicians need to learn reduces time for the other things they need to learn.
+  Need to be v specific ab what you teach. Don't want to turn MDs into general-purpose programmers, want to give them examples   using pt data (real or simulated)
+  Tools: too many options, steep learning curve, enterprise readiness
+    Don't present multiple options as equivalent; people don't want to hear about them all, they want one that works well
+    Introduce programming concepts only when they become necessary. Like, didn't introduce concept of functions until     explained read_csv. 
+    Stick with tidyverse for conciseness, consistency, human-readable code.
+    After ntroducting concepts, reinforce them with interactive exercises. RMarkdown is super good for this!
+Physicians are often reluctant to install software w/o official support; enterprise solutions from Rstudio are good for this.
+
+
+Need primers on clinical data, like what a complete EDA looks like.
+Need to make frameworks available for working on clinical data, esp workflows. RMarkdown is good for this.
+
+github.com/skadauke/reproducible-clinical-data-analysis
+
+
+
+#Day 2
+
+
+##An introduction to Bayesian inference in medicine using Stan
+###Ben Goodrich (Columbia)
+ 
+http://mc-stan.org/workshops/Rmedicine2018/
+
+
+Stan is a high level probabilitstic programming language that resembles C
+
+MCMC is at heart of modern Bayesian inference, and Stan's MCMC algo is v diff from that used by BUGS and other 90s ones
+Uses some of the principles of Hamiltonian dynamics from physics
+  *Can* do posterior distrib w/ over a million parameters, though it's better not to
+  Stan reqs you specify the log density of the posterior distribs, optionally ignoring constants. Similar to Metropolis-Hastings; but unlike MH, uses the gradient of the log density of the posterior distrib you defined to generate proposed moves thru the parameter space. Calcs the gradient automatically.
+  
+  
+Beta-binomial example with Ebola
+What's the pr that a drug developed by Mapp Biophamaceutical will allow a person with Ebola to survive?
+
+Our preexisting info is high mortality rate, and knowing there's a press release that the drug exists does not modify that much. But! If we know all of 21 people treated with it in a trial survived, that would greatly increase out confidence
+
+Discusses deriving a beta binomial distrib
+
+
+# Stan Program for Ebola
+```{stan, output.var="ebola", eval = FALSE}
+
+//Data block
+data {
+  int<lower = 1> exposed;
+  int<lower = 0, upper = exposed> survived;
+  real<lower = 1> alpha;
+  real<lower = 1> beta;
+}
+//express everything in logs to allow the physics tricks to work
+transformed data { // this block is only executed once
+  int died = exposed - survived;
+  real constant_1 = lchoose(exposed, survived); // log of binomial coefficient
+  real constant_2 = -lbeta(alpha, beta);        // negative log of beta function
+}
+parameters { real<lower = 0, upper = 1> pi; }   // survival probability
+//is v impt to let it know what parameter space to draw from
+
+//We take the constant from above, number of people who survived above, 
+model {
+  real log_pi = log(pi);
+  real log_1mpi = log1m(pi);
+  
+  //The target lines below are the heart of it:
+  
+  //This is the log likelihood
+  target += constant_1 + survived * log_pi + died * log_1mpi; // binomial_lpmf(...)
+  
+  //This is the beta distribution of our prior
+  target += constant_2 + (alpha - 1) * log_pi + (beta - 1) * log_1mpi; // beta_lpdf(...)
+}
+
+//Calculating odds of survival (gives you entire posterior distrib)
+generated quantities { real odds = pi / (1 - pi); }
+```
+
+
+
+## Posterior Output from Ebola Model
+
+```{r, results = "hide", message = FALSE}
+library(rstan)
+
+#Got the priors from the survival in that US ebola scare a couple years back
+M <- 2 / 3 # prior mode
+m <- 0.55  # prior median
+alpha <- (m * (4 * M - 3) + M) / (3 * (M - m))
+beta  <- (m * (1 - 4 * M) + 5 * M - 2) / (3 * (M - m))
+post <- stan("ebola.stan", refresh = 0, # suppresses intermediate output
+             data = list(exposed = 7, survived = 5, alpha = alpha, beta = beta))
+```
+```{r}
+post
+```
+
+Resulting table gives estimates of mean, standard error of mean, SD, quantiles, n_eff, and Rhat for pi, odds, and log prob
+
+Specifying priors is biggest obstacle for people trying Bayesian methods
+Stan is indifferent to whether you use conjugate priors
+A quantile fct is the inverse of the cumulative distribution fct, so it maps from cumulative pr to order statistics
+Inputting a standard uniform random variate into the quantile fct for distribution D yields a realization from D
+So quantile fcts make it v easy to do this in stan
+metalogdistributions.com/publications.html
+Quantile Parameterized Distributions are distribs whose parameters are quantiles, such as median, 25%, 75%, 97.5%, etc. V helpful bc quantiles are often used in medical field! So QPDs are an excellent way to build priors from existing medical data.
+
+Fcts like binomial_lpmf() save having to do transformations before setting the target for your model.
+
+
+## Another Stan Program for Ebola
+
+```{stan, output.var="ebola2", eval = FALSE}
+// this next line brings in the JQPDB_icdf function, among others that are not used here
+#include /JQPD.stan
+data {
+  int<lower = 1> exposed;
+  int<lower = 0, upper = exposed> survived;
+  
+  real<lower = 0, upper = 0.5> alpha;   // low is the alpha quantile
+  real<lower = 0, upper = 1> low;
+  real<lower = low, upper = 1> median;
+  real<lower = median, upper = 1> high; // the 1 - alpha quantile
+}
+parameters { real<lower = 0, upper = 1> p; }  // primitive with implicit uniform prior
+transformed parameters {
+  real pi = JQPDB_icdf(p, alpha, 0.0, low, median, high, 1.0); // survival probability
+}
+model {
+  target += binomial_lpmf(survived | exposed, pi); // log-likelihood
+}
+```
+
+## Posterior Output from Alternate Ebola Model
+
+```{r, results = "hide", message = FALSE}
+post2 <- stan("ebola2.stan", refresh = 0, # suppresses intermediate output
+              data = list(exposed = 7, survived = 5, alpha = 0.25, low = 0.4,
+                          median = 0.55, high = 0.7))
+```
+```{r}
+post2
+```
+
+The above fct *can* be solved analytically, it's a simpler fct, but gives essentially same info as the first program, w/ a more skeptical prior
+
+
+rstanarm package comes with precompiled Stan programs that accept the same syntax as popular R fcts
+lm, biglm, glm, aov for LMs and GLMs
+betareg when the outcome is a proportion
+clogit for case control studies
+gamm4 for splines
+lmer, glmer, and nlmer for hierarchical models
+jm and mvmer for joint models of survival/ severity
+polr for ordinal outcomes (probit)
+
+rstanarm::stan_clogit is the syntax we want
+Can change the default priors if you want, and you get draws from the posterior distribution.
+https://cran.r-project.org/web/packages/rstanarm/vignettes/rstanarm.html
+
+Nonlinear hierarchical ODE model for theophylline: want to predict concentration of a drug over time, using a dataset in base
+
+## Nonlinear Hierchical ODE Model for Theophylline
+
+```{r, Asthma, cache = TRUE, results = "hide", warning = FALSE}
+library(rstanarm)
+
+
+post3 <- stan_nlmer(conc ~ SSfol(Dose, Time, lKe, lKa, lCl) ~ 
+                     (0 + lKe + lKa + lCl | Subject), data = Theoph, #This is to allow log Ke, log Ka, log Cl to vary by Subject
+                    prior = normal(location = c(-2, 0.5, -3), scale = 1, autoscale = FALSE),
+                    seed = 982018, refresh = 0)
+```
+```{r}
+
+#4000 draws on 46 parameters, well w/in what Stan can handle.
+str(as.data.frame(post3))
+```
+
+## Results of Theophylline Model {.smaller}
+
+We can use `summary()` or implicitly `print()` to see the highlights of the posterior distribution:
+```{r, warning = FALSE}
+post3
+```
+#Returns median, deviation from median abs (MAD_SD)
+#.86 corr in post distrib bw lKe and lCl parameters. V strong corr in the ways Ke and Cl deviate at the individual level.
+
+MCMC can get stuck in an oscillating state where would work in infinite time but in any finite number of steps the results may be too high or too low. In cases where it diverges, at best only the posterior medians are trustworthy.
+Stan expands the number of cases where MCMC mixes with whichever kind of ergodicity is the kind we want
+Drivatives aren't defined for discrete parameters, so preferable to have prior and posterior both be continuous
+
+When stan fails, it fails with a warning, not silently. Other MCMC algos have no ability to *diagnose* that they've failed in finite time due to not mixing fast enough.
+  Stan can detect when part of the posterior distribution is unreachable due to numerical error
+    Throws a warning like "59 divergent transitions"
+
+
+
+
+trialr and RBesT packages are the best stan-using PK/ PD packages
+trialr EffTox: seamless phase I-II dose-finding
+Hierarchical model for a phase II trial of a treatment in a diases with mult subtypes using binary responses
+BEBOP, a stratified medicine design for studying efficacy and toxicity in phase II that incorps 
+
+Goes over using them to estimate therapeutic window, efficacy-toxicity utility function for determining optimal dose.
+
+efftox_contour_plot() #has contour lines for dose response
+Best place to be is lower right corner - high pr(efficacy), low pr(toxicity)
+
+
+## Efficacy-Toxicity Example from **trialr** [Vignette](https://brockk.github.io/trialr/articles/EffTox.html)
+
+```{r, message = FALSE, results = "hide"}
+library(trialr)
+outcomes <- '1NNE 2EEB'
+mod <- stan_efftox(outcomes,real_doses = c(1.0, 2.0, 4.0, 6.6, 10.0),
+                   efficacy_hurdle = 0.5, toxicity_hurdle = 0.3,
+                   p_e = 0.1, p_t = 0.1, eff0 = 0.5, tox1 = 0.65, 
+                   eff_star = 0.7, tox_star = 0.25,
+                   alpha_mean = -7.9593, alpha_sd = 3.5487, 
+                   beta_mean = 1.5482, beta_sd = 3.5018,
+                   gamma_mean = 0.7367, gamma_sd = 2.5423, 
+                   zeta_mean = 3.4181, zeta_sd = 2.4406,
+                   eta_mean = 0, eta_sd = 0.2, psi_mean = 0, psi_sd = 1, seed = 123)
+```
+
+## Decision-Theory in Efficacy-Toxicity Example
+
+```{r}
+efftox_contour_plot(mod$dat, prob_eff = mod$prob_eff, prob_tox = mod$prob_tox)
+```
+Dose level 3 is slightly preferred because it is farthest to the southeast
+
+
+
+
+
+## Ankylosing Spondylitis from RBesT [Vignette](https://cran.r-project.org/web/packages/RBesT/vignettes/introduction.html)
+
+Example of analyzing data from previous trials to analyze likelihood of success for a drug
+Basically a meta-analysis.
+
+```{r, RBesT, cache = TRUE, results = "hide", message = FALSE}
+library(RBesT)
+set.seed(34563)
+map_mcmc <- gMAP(cbind(r, n-r) ~ 1 | study, data = AS, family = binomial, #This lets findings vary by study
+                 tau.dist = "HalfNormal", tau.prior = 1, beta.prior = 2)
+```
+```{r, echo = FALSE}
+pl <- plot(map_mcmc) #Can see mean and MAP from the 8 studies, and how each study's uncertainty relates
+print(pl$forest_model)
+```
+
+## Analysis of Ankylosing Spondylitis Model
+
+Is the study you propose doing significantly different from the ones you've already done? robustify fct is for that! e.g. if we want our prior to come w/ a 80% chance that study pop is like that of the previous 8 studies, 20% chance is not like the pop of the previous 8 studies
+
+```{r, message = FALSE}
+library(RBesT)
+map <- automixfit(map_mcmc)
+map_robust <- robustify(map, weight = 0.2, mean = 0.5)
+post_placebo <- postmix(map_robust,  r = 1, n = 6)
+post_treat   <- postmix(mixbeta(c(1, 0.5, 1)), r = 14, n = 24)
+pmixdiff(post_placebo, post_treat, 0) # prob negative
+```
+Returns an 0.99 pr that results will be consistent w/ previous 8 studies, if I'm understanding this right.
+
+Novartis uses the above in their drug development process.
+
+
+rstantools package gives skeleton of an R package for Stan programs. Things the package maintainer needs to do:
+Write a useful Stan program
+Write R wrapper fcts that usually input a formula, data.frame, etc, process the data into the form specified by the Stan program, andcall it
+Write post-estimation methods (can import generics from rstantools)
+Test the fcts in the package
+  W/ a precompiled stan model, can do hundreds of tests in the time CRAN gives you, so good
+  
+  
+Writing Stan programs is the hardest part. How do we do things all in R?
+brms::brm fct inputs a formula, data.frame, etc; writes a Stan program; compiles it, and executes it. And supports a wider range of regression models than rstanarm does.
+Essentially compiles R syntax to stan, so can support huge variety of regression models.
+Requires Rtools and C++
+brm() - Bayesian regression model
+
+Example that's a meta-analysis of treatment adherence based on some psych variables:
+- Example adapted from [Matti Vuorre](https://vuorre.netlify.com/post/2016/2016-09-29-bayesian-meta-analysis/)
+```{r, metaanalysis, results = "hide", cache = TRUE, message = FALSE}
+library(metafor)
+dat <- escalc(measure="ZCOR", ri = ri, ni = ni, data = dat.molloy2014)
+dat$sei <- c(.1, .04, .14, .12, .1, .13, .08, .06, .13, .04, .14, .11, .09, .04, .08, .13)
+dat$study <- LETTERS[1:nrow(dat)]
+library(brms)
+brm_out <- brm(yi | se(sei) ~ (1|study), data = dat)
+```
+
+
+bayesplot package - good for visualizing stuff from posterior distribution
+  Can use w/ other methods, but Stan has best algo for drawing from posterior distribution
+  mcmc_areas_ridges() fct
+  
+
+brms has some exposed fcts that let you learn how to code stan models from it.
+str(brms::makestandata(yi | se(sei) ~ (1|study), data=dat), give.attr-FALSE) 
+is a way to look at what data you're giving it
+brms::makestancode(yi | se(sei) ~ (1|study), data=dat),
+is a way to look at the stan code it generates based on the list of data you pass it.
+
+
+Shows example that *can't* do in brms - warfarin PK and PD
+Ordinary differential equation in the PD part you'd need to solve numerically.
+
+Makes a model w/ hierarchical priors on the initial parameters going into the ODE process. At each observed timepoint, stan can solve the ODE numerically to come up with a conditional mean for how much of the drug should be in the body based on known conditions and the known evolution process that we can't solve analytically.
+Do need to write a stan fct that returns deriv of the ODE
+x_r values go into pk part of the model, which does have analytic solution
+
+Ability to handle ODEs is a lot of what's useful and exciting about Stan
+
+
+Beautiful posterior graphs, shading for uncertainty. Shows how you can use model's prediction to translate potentially quite confusing models and data into something clinicians can easily interpret and use.
+(And could then feed those predictions to a utility fct to make decisions based on predictions from observables)
+
+Conclusions:
+Stan is used in med research and biostats (Novartis and AstraZeneca have contributed both funding and code)
+Most advanced MCMC algo, which will either work or fail w/ warnings
+
+
+##Imagine the Possibilities of Data SCience in Medicine
+###Harlan Krumholz (Yale)
+
+MD - cardio research, head of Yale's center for outcomes research and evaluation
+Comparative effectiveness. Good guy to get in touch with!
+Advocate for making data widely available
+Patient-centered outcomes
+Forbes, NPR, and NYT contributions
+
+V interested in applying data sci to healthcare; trying to make visible what's invisible, showing people what's invisible in healthcare system and being advocate for underrepresented people
+
+
+Our work in healthcare should always be driven by people in need. Always have to come back to: if I'm successful, what's the result? People are depending on you, whether or not they know it
+
+Urges dreaming bigger, aspiring to make a bigger impact
+
+Problem: the current research enterprise can't keep up w/ the info needs of pts, clinicians, health systems, regulators, and others.
+We make decisions w/ a lot of uncertainty. 
+Do a lot of RCTs; large, cumbersome, expensive, and while avg effect is good subgroup analyses are underpowered.
+  It is difficult to find real heterogeneity
+  Can't get individual-level preictions we'd like to
+  More than 1/2 of cardiology recommendations aren't evidence-based; and even the large trial evidence isn't adequate for what we want
+Directionality of research is often not based on what people care about. How is impt; if we know what boosts outcomes but can't apply it, that's a problem.
+  e.g. socioec limits - most people can't afford $400 in an emergency
+
+Lots of articles are published, but few are germane to helping people make choices. 
+Even around common conditions like hypertension, decisions at individual level are largely based on conjecture.
+
+Urges more preprints - starting a preprint server in clinical med, MedArxiv, w/ BMJ and Cold Spring Harbor
+  Conferences and preprints more up to date than published lit a lot of the time
+
+Information is becoming increasingly impt to medicine. 
+He's v concerned w/ how slowly sources of knowledge update - time from idea to getting grant money, time to publication, time to publish a textbook.
+
+Believes digital transformation allows for major shift in how med's done. Comp/ analytic advances, mobile devices + sensors should let people get info much faster. Make it easier for pts to get diff recommendations if they want.
+Compares to microscope - there's so much more we can *look at* than before, bc digital rather than having to go there and look at stuff in physical. Getting messy data into accessible formats necessary for that.
+
+Mobile devices and sensors - won't be limited to clinical info, will be able to get more complete data ab pts' lives. Will let us assess impact of interventions to a greater extent (e.g. sleep improvement). Being able to text them questions once a day rather than asking them to recall symptoms from past days at a visit is a boon.Being able to track activity changes (bc self-report is often inaccurate! Often need to drill down w/ v specific questions to learn someone's claudicating and no longer walks up stairs. Activity tracker can just tell you that)
+
+Hope to make dynamic learning systems, try to improve with every interaction.
+  Goodhart's Law tho
+
+His core thesis: data generated every day, for a variety of practical purposes, can serve as source of knowledge to fuel a learning health care system
+
+Uses "collective wisdom" a lot, wants to give pts agency (over their data, and enabling them to make own decisions)
+
+
+Argues that case report forms should be dead; streaming data is preferable.
+CRFs are basically a low-dim rep of pt data. (Despite how long and detailed they are!)
+  Yes/ no dichotomies for things, rather than numeric
+  Pt histories and more actual numeric data can help
+  Pts who show up identical on CRFs can be very obviously different to clinicians who know those pts' historical data or comorbidities. 
+  There is huge heterogeneity in pts who have "Yes" to a dichotomous variable like "has ever had a heart attack"
+    When it happened, severity, current age, changes in risk factors since then...
+
+What he wants is a way to bundle in lots of heterogeneous historical data
+  I'm thinking NLP on clinical notes -> extract features -> 
+
+Concept: "There is no missing data." People just have different amounts of data.
+  If someone had a period where there were lots of measurements taken and someone else had no such period, that is itself   information. Metadata about treatment is informative.
+  How do we leverage all the data that each person has? It's a feature engineering problem. How do we summarize someone's past history into a representation that can be compared to those of other people?
+
+We can predict mortality really well but not readmissions - he challenges us to predict readmissions better (I could work on that!)
+  Clinical stuff that isn't captured - did they get good rest? how was communication in the hospital? did they understand the discharge instructions? is v impt for readmissions, but how do we operationalize that?
+
+Wants much better ways of presenting data to pts. Cites weather maps; predicting the weather is very complicated, but everyone can understand the predictions at a glance. 
+
+InnoCentive and Kaggle for problem-solving contests.
+
+
+
+
+
+Key themes:
+Patient history gives us information that doesn't get captured. (And what data a patient doesn't have is itself informative).
+
+
+Challenges us to predict readmissions better.
+
+
+
+##Varimpact: exploratory variable importance integrating causal inference and machine learning
+###Chris Kennedy (UC Berkeley)
+
+github.com/ck37/varimpact
+
+We're looking at treatment effect of variables, not at predictive impact of those variables.
+
+Want to use ML to minimize the number of statistical assumptions we need to make.
+
+
+Scenario: dataset in many covariates W were measured at baseline
+Outcome Y measured after baseline
+Question: what variables should be evaluated as treatments (A) in future RCTs?
+  Which variables, if hypothetically intervened upon individually, appear to most impact the outcome?
+This is one formulation of a "causal variable importance problem"
+
+Preview: impact of pet exposure on absolute risk of childhood leukemia within study. (looked like reduced risk - presumably their hyp was autoimmune)
+
+Problems w/ traditional var importance:
+unrealistic fctal form, biased and overfit in OLS
+Overly coarse binary results, e.g. lasso var inclusion - great for prediction but binary in/ out is more coarse than we'd like, would prefer relative ranking and treatment effect estimates
+Wrong bias-variance tradeoff - we want to estimate treatment effects separately for each var, not overall outcome
+Random forests lack asymptotic statistical inference w/ p-values, don't give enough info
+Masking: correlated vars will be artificially low in importance. Any algo will think they're unimpt bc of combined effects, so we'd like to be able to look at effect of each var individually.
+
+
+Variable importance as maximal contrast.
+A common sci q is which vars have the greatest influence on the outcome
+If I could shift a subject's covariate value from its worst level to its best level, how much would that impact the outcome?
+Call this a "maximal contrast" intervention, where the levels are chosen to yield the greatest treatment effect for that var
+Hypothetical intervention on a var in an obs study can suggest future real interventions to test in RCTs.
+
+The proposed method: varimpact
+Conduct a separate obs study on each var, using its levels as treatments
+Use training sample to ID 2 levels of treatment var to use for contrast
+Estimate "treatment effect" on test samples at certain levels, adjusting for other vars
+Leverage CV-TMLE so bias reduction step can include full sample
+Adjust for multiple comparisons via Benjamini-Hochberg false discovery rate correction
+Automate data cleaning steps like imupting missing values
+
+Applications:
+Childhood leukemia in Costa Rica
+Cardio disease in Framingham Heart Study
+TBI in an urgent care setting
+
+Leukemia:
+Outcome binary. Childhood leuk case control study
+Sample size 818 obs, 39% positive
+Covariates: 11 exposures like breastfeeding, birth order, allergies ; 3 demographic covariates like age, SES
+
+Childhood fevers increased risk. Pets and farm animals seemed to have protective effect.
+  I am not convinced these aren't proxies for SES.
+
+
+Framingham heart study:
+Heart disease, 3263 obs, 26% positive
+Total cholesterol very impactful
+
+
+
+```{r}
+estimators = c("SL.glmnet", "SL.ranger", "SL.xgboost", "SL.mean")
+
+#use all cores
+future::plan("multiprocess")
+
+#estimate variable impacts
+result = varimpact(outcome, data, Q.library=estimators, g.library=estimators)
+
+#plot impact of a variable
+plot_var("cholesterol", result)
+
+```
+
+
+Stat theory behind it: chapter 9 in Target Learning in Data Science: Causal Inference for Complex Longitudinal Studies
+
+On their roadmap is to make inverse propensity score weighted and simple linreg so can compare their method's predictions to other methods.
+
+
+
+
+
+##Using R to Automate the Investigation of Pediatric Health Disparities
+###Chinonyerem Madu (Childrens Hospital of Philadelphia), Paul Wildenham
+
+Slides: https://github.com/chop-analytics/Presentations/blob/master/investigate-potential-disparities.pdf
+
+
+She goes by Nonye Madu. maduc@email.chop.edu
+paul is wildenhaip@email.chop.edu
+
+github.com/chop-analytics/demographics is a mirror
+
+chop.edu/centers-programs/quality-and-patient-safety
+
+CHOP uses an R package Madu developed internally for this.
+
+What exactly is quality improvement? Incorporating evidence-based care into practice to reduce variation, reduce waste, minimize harm
+  Standardize input to standardize output
+CHOP Office of Clinical Quality Improvement partners w/ clinical teams to define issues, diagnose driving factors, test changes, sustain progress.
+
+Reducing X-ray use: a successful QI initiative in 2014
+New AAP guidelines on bpts who present w/ bronchiolitis; can diagnose it w/o x-ray, so recommendation is to not use x-ray for it. Successfully decreased x-ray use in such pts from 35% to 15%. Statistical process control chart - shows region of expected variation, letting you see when have made a fundamental shift in process.
+
+However! Marked difference in Xray utilization b/w black and white pts that was stable over time. Why wasn't this difference standardized away?
+Utilization of xrays higher in white than in black pts. Hyps include white parents being more demanding, but regardless of cause of the gap, we wanna close it.
+You won't know if something might be happening unless you look for it! Had not been looking for health disparities, and need to start.
+Since July 2013, 159 active or completed QI initiatives at OCQI. Only 1 was on reducing disparities in care, despite serving a v diverse pt pop.
+
+Barriers to implementing a blanket disparities screen:
+Manual work to add demo data fields and generated stratified visualizations
+  Were using ClickView, a BI tool that is not great for reproducibility. Took hours to do for that one project.
+  Manual analysis = tougher implementation of a standarzied screening protocol. Hard to get all analysts to do w/o standardization
+  
+Need for simple, systematic approach for screening for potential disparities led them to create their internal demographics package.
+Resources that helped implementation:
+Internal SQL enterprise data warehouse containing data from EMR
+Data mart str where project cohorts and metrics were packaged into predefined tables
+Ongoing team initiative to increase R utilization
+Exp creating an internal R package to auto generate statistical process control charts
+
+Demographics package auto generates stratified charts. Given metric by race/ ethnicity, insurance payer type, primary language.
+Demographic info added automatically to cohort based on pt medical record number and visit account number
+Bar charts for overall summary and at beginning of project, run charts to establish if diffs changed over time.
+
+Backend: get data from Epic data warehouse, standard SQL query pulling by pt identifiers
+R: tidyr, diplyr, lubridate, glue to prep dataset for easy plotting
+Visualize: purrr and ggplot2 to iteratively generate plots for each demographic
+
+Lets us add or subtract demographic categories as we go along. Just need an input w/ levels in demographic factor, outputs stratified graphs.
+
+
+One line of code that takes name of table in SQL database and metric of interest.
+```{r}
+demographics::screen_demos(table="COHORT_NAME", metric="METRIC_NAME")
+```
+
+
+So, how do we use this data?
+
+Case study: acute kidney injury in ICU on invasive ventilation
+Goal: reduce total days spent on invasive ventilation
+Bar charts bc limited historical data for this cohort
+
+Big diff in ventilation days by race. Non-hispanic white pts spent avg 10 days fewer on invasive ventilation than pts in race: Other, for example.
+
+Case study: NPO clear fluid fasting time.
+Cohort - pts coming from home for an anesthetic proc w/ same-day discharge
+Goal: reduce the NPO clear fluid fasting time to 4 hrs or less for 60% of cases. (In response to recent policy change that is okay to give up until 2 hrs before procedure; long fasting times were major pt dissatisfier, so want to reduce)
+
+```{r}
+demographics::screen_demos(table="FACT_NPO", metric="NPO_CLEARS_WITHIN_4_HRS_IND", date="ANES_DT", chart_type="run")
+```
+Pre-existing disparity; disparity increased after the policy change. The gap b/w white and black pts doubled after the policy change. So, did further fllowup to figure out why change in compliance like this.
+
+
+Moving forward:
+Leveraging data marts and project metadata repository to automatically run fct
+Create dashboard for easy exploration
+Add more stratification vars
+Create Shiny dashboard so non-coders can quickly investigate disparities
+
+Infra building:
+establish a workgroup dedicated to disparities investigation
+Use data to generate stories and create guidance
+
+
+
+##Development of an Open and General PBPK Model to Predict Maternal-Fetal Exposures for Drugs Metabolized by CYP Isoenzymes
+###Madeleine Gastonguay (Metrum Research Group)
+
+Integrate knowledge across mult sources for decisionmaking in clin therapeutics and drug development
+
+Physiologically based model of body!
+PBPK model
+
+Compartments by bodily system, differential eqns for bloodflow and transfer b/w them
+Pregnant model differs from non-pregnant model, cause there are more compartments. (And some of the parameters change!)
+
+Validated model with obs from several studies
+
+Used mrgsolve to create their ordinary differential eqn model
+  Rcpp and BH packages, boost C++ library
+  Data manip, graphics, interactive viz thanks to R was v useful, Shiny in particular
+
+Shiny app where can choose drug, pregnant vs nonpregnant model, gestational age, blood pressure...
+Runs a real-time simulation thru cloud computing platform and gives you interactive plots of the maternal and fetal drug exposure.
+
+
+##Is It Working? Ongoing Evaluation of Drug Efficacy with Joint Models
+###Jacqueline Buros (Mount Sinai)
+
+Using joint models to check whether a drug is working. Says everyone should use them.
+Joint models are an enhanced version of a survival model w/ a bunch of use cases in medicine:
+Baseline covariates -> {longitudinal marker 1, longitudinal marker 2, survival status}
+{longitudinal marker 1, longitudinal marker 2} -> survival status
+
+Data captured over time can be v informative on why drug is/ is not working.
+
+Focuses on oncology.
+
+Another example model:
+Baseline covariates -> {longitudinal marker 1, longitudinal marker 2, time-specific hazard}
+{longitudinal marker 1, longitudinal marker 2} -> time-specific hazard
+{time-specific hazard, cumulative hazard} -> survival status
+Using longitudinal markers to examine hazard
+
+Joint model has these parts:
+Longitudinal submodels:
+For each marker m, for each patient i, measurement time j, observations follow a distribution in the exponential family. Get a mixed effect model where trajectory can vary by patient
+
+Event submodel:
+Usually Cox proportional hazards.
+
+Flexible. Longitudinal submodels could be ODEs, though often do linear predictor. Event submodel is exponential based on current value of predictor.
+
+Implement most of their models using stan
+stan_jm() in the rstanarm package lets you make these joint models
+
+
+Survival by Tx, among pts with the target mutation
+
+Often categorize tumor size trajectories with "RECIST" categories - progress, stable, partial, complete
+Spaghetti plot or relative tumor size over time
+
+Joint model gets us a posterior projected hazard. Event hazard as time goes on in the study
+And posterior predicted survival given pt-specific hazard. V powerful tool for predicting individual survival pr, improves w/ more longitudinal biomarkers and better fit.
+We can update survival probability given all we know to date
+
+
+##The Life of a Reproducible Project in R
+###Jennifer Thompson (Vanderbilt University)
+
+Slides: https://jenthompson.me/slides/rmedicine2018/rmedicine2018#1
+
+
+Cites Julia Lowndes "A toolkit for data transparency takes shape"
+Reproducibility makes life easier for your future self
+
+Can use reproducibility tools either incrementally or all together, depending on time/ importance
+Goal is to demo some tools and practice which can improve our sci rigor and make our lives more pleasant throughout the course of a project
+
+
+How to organize your project
+One project, one directory
+Keep yourself organized, make it possible for others to use your code
+Sub-directories for figures, analysis, publication docs, for example
+
+Projects should:
+Allow more than 1 project open at once
+Keep you in the right place
+Facilitate packrat, version control
+Rstudio products + version control are great for this
+
+Benefits of version control:
+Modular thinking and organization
+Know when and why something changed
+Document and timestamp your work; can prove you stuck to your analysis plan, didn't do post-hoc analysis
+Easier to collaborate on multiple machines
+
+
+usethis package is good for this!
+
+
+Access data programmatically, not manually exporting and saving email attachments, is preferable
+REDCap API or SQL databases are much better than having many files w/ different versions from disparate sources manually created/ exported
+
+Can track exactly what you access + all steps taken to manipulate it
+Raw data remains in original state and location
+Rerun some script(s) throughout data collection, use most current data to monitor, clean, and explore
+
+Her group uses REDCap almost exclusively.
+httr package to extract data via the REDCap API.
+
+```{r}
+monthly_post <- httr::POST()
+url = "https://redcap.vanderbilt.edu/api/"
+
+body=list(,
+#store token in R environment file:
+token = Sys.getenv("MYTOKEN") #this lets you freely share code w/o fear of exposing token!
+content = "record",
+format - 
+  #etc.
+  ))
+
+```
+
+Has tutorial on her GitHub for monitoring accuracy and completion during prospective data collection
+
+Use API and RMarkdown to easily run analyses that happen repeatedly during prospective data collection
+  NIH and DSMB reports
+    flexbashboards for study monitoring
+      Enrollment targets, protocol pain points, making sure you're executing the study you planned to
+      
+      redcapAPI and REDCapR packages are options
+      
+
+Test your (data) assumptions:
+
+Make sure age is all positive, none negative, for example
+
+assertr is a package that is really good for proactively making sure there aren't mistakes in your data wrangling
+Include asseritions in scripts that
+  Load raw data - is it what we expect?
+  Create analysis datasets - is our code doing what we expect?
+
+      
+```{r}
+
+monthly_df %>% verify(creat_m <= 20)
+```
+
+If creatinine is fine, returns original data frame. If creatinine is at impossible value, throws an error and shows you where it's out of bounds
+
+Shows a within_bounds() fct for checking raw data similarly
+
+You decide how strict your assertions are. error_fun=error_append argument adds all the errors found, requiring you to actively pay attention, rather than just failing.
+
+
+drake - built to encourage and enable efficient, reproducible workflows
+Point of it is to know which components are up to date and which to update
+You create a plan that will create/ update targets
+make() the plan, and then it knows which components are current and which need to be updated
+Efficient, doesn't waste computing time on things that are already fine
+
+wlandau.github.io/drake-talk is good start
+
+ROpenSci has lots of good tutorials on reproducibility
+Can submit packages to them, they have a searchable list, good discoverability
+Benefits of peer review on package, reviewers learn a lot about package design and development
+
+skimr package is great for descriptive statistics
+
+##Reproducible Clinical Trial Design for Patient Centered Outcomes Research (PCORI)
+###Denise Esserman (Yale)
+
+Can't replicate what you can't reproduce. A lot of trials' final analyses aren't reproducible.
+
+Need to also be concerned about the study design. Design and analysis both need to be reproducible.
+  Many studies report way too little information to say much about what they *did*.
+    Often are paraemeters necessary to run particular software that they don't specify
+
+Reproducibility is hard in clinical medicine
+  Clinicians often don't understand what statistician is doing
+  A fully reproducible analysis may increase liability - remember Duke study
+
+Esserman  works on two-stage clinical trial design. 
+Need to understand how a pt's preference for a certain treatment over others affects outcome response
+Can be influenced thru improved adherence or an additional psych response
+Esp impt in unblined studies and/ or behavioral interventions. There are a lot of studies where we cannot blind the pts and their preferences have huge impact on the effectiveness of the treatment.
+
+2-stage design:
+1st stage of randomization is pts are assigned to Choice arm or to Random arm
+In Random arm, assign Treatment A Treatment B arms in the normal way
+In Choice arm, pts are allowed to choose whichever treatment they prefer
+This allows us to estimate 3 diff effects:
+  Treatment effect (avg effect of ptreatment in specified pop)
+  Selection effect - diff in treatment effect influenced by self-selection of a given treatment by pts
+  PReference effect: change in outcome resulting from interaction b/w preference and treatment received (ie do pts do worse if they get the treatment they didn't want)
+  
+Methods development:
+Expansion to allow for stratification 
+Binomial/ count outcomes rather than continuous only
+Estimation of optimal allocation b/w random and choice arms
+Undecideds
+
+Shiny app: http://18.217.10.93/pcori-page/
+
+R package for it is called preference
+
+Future directions:
+Expand to other trial designs
+  Curtailed samples - Simon two-stage, stopped negative binomial
+  Poisson
+  Expanding to produce a planning document w/ everything you need once you've finished the study
+  
+Reproducible analysis is nice, but need a reproducible *trial*. Start to finish, no losing track of how response var was defined
+
+packrat and switchr packages are used to keep the code reproducible as R changes and dependency packages change
+
+
+Audience comment: ideal would be able to download an NEJM study and rerun the whole analysis. That would give much more confidence in it. This is a step toward this.
+
+clinicaltrials.gov has made strides toward reproducibility, e.g. that now requires you to support your protocol.
+
+
+##Traceable and reproducible use of R for Analysis and Reporting in a regulated environment
+###Keaven Anderson (Merck)
+
+Made a Shiny app that generates reproducible code, incl package names and versions
+
+Merck's SP group - Statistical Programming. Almost all SAS.
+
+Challenges to updating Merck's SOPs and execution resources to enable submitting R results to reg agencies:
+1. Limited industry and reg guidance on consistent, reproducible, and traceable  R coding for analysis and reporting (A&R)
+2. Regulatory compliance wrt result validity, consistency, and reproducibility can be tricky w/ open source
+3. Diff versions of R and packages installed w/o traceability or documented testing
+4. Training plans, documentation, change control, and val plans for R that differ from SAS.
+
+So, he's laying out Merck's initial roadmap for a regulaed, validated, controlled, and centralized (RVCC) R environment for developing regulatory deliverables.
+
+Merck has pretty tight controls on what you can download, which is a challenge when you wanna get R packages.
+
+Goals:
+SOP and exec resource for R coding
+Strat for validating R apps/ modules
+Ensure reproducibility of results
+Training plan for using R
+Best practices for SAS to R interfaces
+Enable innovation, eg visual analytics, notebooks
+
+Need initial system qualification, qual of essential additional R packages, development and val of Merck-specific R packages, controlled access to clinical trial file str, R system administration, R-specific dev resources
+
+Define GCP compliant processes for specification, validaiton, reproducibility, and traceability.
+They want dynamic viz, repro research, and innovative methods from R
+
+
+R w/ selected external R packages -> internal standard R packages -> project specific R packages -> project R programs
+There are parallels to SAS development environments, but not identical
+
+
+Regulatory R environment:
+Only base R and selected "high quality" R packages will be installed
+Need doc to fulfill reg compliance under 21 CFR part 11
+Base R, Rstudio IDE, and Shiny server pro all are 21 CFR part 11 compliant - links to PDFs in slides.
+
+However, in packages for survival analysis there are a lot of gaps. (R survival package should be validatable, but others that add on to it maybe not)
+
+SDLC - define reqs, create R packages and programs, val according to a val plan, promote to production secured area/ training/ change management and maintenance as needed
+
+
+Traceability:
+Git can trace every code change
+Reasons for changes should be documented at commit
+Code review can be completed within Git repo
+
+Limited exp submitting R results to reg agencies, though have done it. Do use packrat for reproducibility. Trying out external, bc hard to predict reg agency R environment.
+Initial experience bringing in external work was challenging. Couldn't get packrat to work for analysis they were sent from France
+
+
+Code coverage of unit tests in package is smthng they're thinking of using for val
+Had people basically do a questionnaire, build a test suite
+
+R Consortium has a guide from AIMS special interest group for Part 11 compliance. 
+  ropensci packages are good - should try to follow their standards
+
+
+Audience member proposes submitting a Docker container to FDA to make sure everything's reproducible
+
+
+##omputational Reproducibility in Medical Research: Toward Open Code and Data
+###Victoria Stodden
+
+Slides are on her site, stodden.net
+
+As a lawyer in addition to statistician, unique perspective on reproducibility
+
+Tech is driving a reassessment of transparency
+Big data/ data driven discovery: high dim data, p>>n
+Compu power: sim of complete evo of a physical system, systematically varying parameters
+Deep intellectual contributions now encoded only in software
+  We're doing a lot more in code. This is a transformation in how we do and disseminate research
+  Real sci contribs that are in the software and ONLY in the software. And a lot of that does not get into the methods   section and is not learned by others. The software is  first-class scholarly object like a paper is
+  
+Claim 1: Virtually all published discoveries today have a computational component
+  Not just bio and not just sci - lots of social sci, digital humanities
+  What do we disseminate to the community when we publish work? Often, not the code.
+  We can do better than just methods sections, now.
+Claim 2: There is a mismatch b/w the traditional sci process and computation, leading to reproducibility concerns
+  More transparency and reproducibility is possible now than in the past
+
+Framings of reproducibility
+  Empirical reproducibilty
+  Statistical reproducibility
+  Computational reproducibility
+
+Empirical reproducibility: our traditional work. Work at the bench, document everything in lab notebook, publish the paper. 
+  Work to reproduce studies
+  Many "standard procedures" don't get reported. Traditional experimental mechanics need to get aligned so they are really documented and reproducible
+  Reproducing work has costs. e.g. in animal research, there's both fiscal and ethical cost to reproducing. Want to be v targeted about which studies are reproduced and why.
+
+Statistical reproducibility: have I done the right stats to alow my inferences from the data to generalize to new samples?
+  False discovery, p-hacking, file drawer, lack of multiple testing adjustment
+  Low power, poor exp design, nonrandom sampling
+  Data prep, treatment of outliers, recombination of datasets, insufficient reporting/ tracking practices
+  Nonrandom sampling
+  Inappropriate tests or models, model misspecification
+  Model robustness to parameter changes and data perturbations
+  
+  There are many steps to get data ready for analysis - handling missing values, outliers, etc. - than can greatly impact the output, the actual statistical findings. And these are ALMOST NEVER REPORTED! Which makes sense, methods sections are short, it'd take many pages to go thru all the details.
+  
+  Jan 2014 Science manuscript sub reqs give some clarity to how to do stat reproducibility. A "data-handling plan" incl how outliers will be dealth with. Sample size estimation for effect size. Whether samples are treated randomly. Whether experimenter blind to the doncut of the experiment. Added statisticians to the board of reviewing editors.
+
+Computational reproducibility:
+  "An article about computational science... is not the scholarship itself, it is merely advertising of the scholarship"
+      David Donoho, Stanford statistician, quote from 1998
+    The actual scholarship is the complete set of instructions and data which generated the figures, tables, output that's actually in the paper
+    This was not true 50 years ago, but is true of scholarship now.
+  Enhancing reproducibility for computational methods: her 2016 Science paper
+  
+Open data and reproducibility are often spoken of in the same breath. But workflow information! Preprocessing, what order fcts were called in... there's a lot more to reproducing results than just having the data
+  Stodden prefers reproducibility to just saying "open data." Open data is vague. Reproducibility has a shaping question, how you got to the results you published.
+    Access to the computational steps taken to process data is as impt as access to the data themselves
+
+7 recommendations:
+Researchers:
+1. Share the data, software, workflows, and details of the computational environment in open repositories
+2. Persistent links in the ublished article w/ permanent identifiers for data, code, and digital artifacts on which the results depend
+3. Citation to shared digital scholarly objects
+4. Document digital scholarly artifacts to facilitate reuse
+Journals:
+5. Journals should do a reproducibility check as part of the publication process, and enact the TOP Standards at level 2 or 3
+6. Open licensing when publishing
+7. Funding agencies should fund research that solves these problems; e.g. how to navigate privacy and reproducibility, like w/ HIPAA
+
+Look up the TOP guidelines for reproducibility
+
+
+She's doing some current work on the lifecycle of data science as a framework.
+Reproducibility in life sci usually focuses on empirical, in social sci on statistical, in computational on computational. Quite different conversations but they all call it reproducibility
+Data sci/ data-oriented analyses, like reproducibility, is a term that often gets used to mean diff things
+
+Lifecycle of data is an old concept. Acquire, clean, use/ reuse, publish, preserve/ destroy
+Create, capture, gather from lab, fieldwork, surveys, devices, sims -> organize, filter, annotate, clean -> analyze, mine, model, derive more additional data, viz, decide, act, drive devices instruments or computers -> share data, code, workflows, disseminate, aggregate, collect, create portals, databases, etc, couple with literature -> preserve, replicate, ignore, subset, compression, index, curate, destroy
+
+Like with open data vs reproducibility, feels that framing things like data is a static object is misleading. What's done to it is impt.
+Also, the above is all about a data manager perspective. Well-curated data w/ version control and identifiers is what managers do; making inferences from it that will be reliable and reproducibile is what data scientists do
+
+Obv this is a lot of diff skills, not all of which a single person may have.
+
+Data science: frameowrk to incorp data sci contribs from diff fields
+Explicit emphasis on reuse and reproducibility. Explicit emphasis on compu tools, hardware, and software (e..g Kubernetes, Google Edge TPUs, and Jupyter notebooks)
+Surfaces ethics (human subjects, privacy), social context (intterpretations of "bias"), scholarly comm and repro research
+  "Bias" as expectation vs true estimator isn't what people mean when they say algorithms are biased colloquially
+
+She's parsed out 4 levels of data sci as a lifecycle. 
+Study of data science (meta level), application level, infrastructure level, system level
+Meta-level: ethics, documentation and metadata collection, accepted best practices
+Application level is like viz, sim, crossval, model building
+Infra level is like notebooks, viz software
+System level is like hardware, cloud computing, data strs, storage
+
+Each application is coupled to the infrastructure you use to implement it.
+
+
+A variety of stakeholders need to coordinate for progress on compu reproducibility
+Sci societies, funders (policy), publishers (TOP guidelines), researchers (processes), regu bodies (OSTP memos), unis and research institutions (who do they hire and promote), unis and libraries (tools and support), the public and press
+
+##Obstacles to Open Science: A Case Study with the Low-Grade Glioma Registry
+###Elizabeth Claus (Yale)
+
+Neurosurgeon and statistician
+
+Upsides:
+Possible impact on clinical care
+Increasing rate of discovery
+Reproducibility
+Reducing cost/ maximizing benefit of funding
+Reduce study overlap or redo (null results not always published)
+Educates other researchers
+Encourages diverse analytic/ programming techniques
+
+Downsides of releasing study data:
+Loss of control, getting scooped
+  This DOES happen. Can not get priority on smthng you spent years gathering the data for.
+Lack of incentive for faculty, academic centers and companies
+Privacy issues for pts
+  Esp w/ rare diseases. Pts tend to all know each other, and on small datasets it is quite easy for them to figure out who is who
+  Most pts do not want their data out there
+Expenses of data transfer and upkeep
+  If you're out of money at the end of your grant, you can't do it.
+
+What are the current "rules" and who sets them? NIH, the journal, your funder (e.g. Yale), pcori. Often you have multiple funders, incl pt organizations that may have unclear rules about who owns the data. Many rules set by many orgs.
+And most med research involves multiple institutions. Following guidelines of 6 universities and going thru 6 IRBs is hard, and consent form wording changes every year.
+
+Efforts to harmonize: EMA and FDA have some, but hard for pts to navigate thru
+EMA allows release of participant-level dta, US generally treats participant-level data as proprietary data owned by institution tht collected it
+Grants are awarded to institution, not to you; you do not own the data.
+ICMJE med journal editors have done some work on reproducibility
+  But most clinical journals don't discuss open science or data sharing at all
+
+NIH sharing reqs are mostly only to the final research data, not earlier stages, cause doing it at every step would be very difficult.
+GLIOGENE - intl case control study, international consortium. Non-US countries analyzed their own data and did not send samples, said US rules didn't apply to them.
+
+Implementation: this is where the institution(s) that fund you come into play. Need to keep all those individuals happy. How long the data have to be retained, shared, and who does that differs across sites.
+
+Key point of contention: when do you have to hand the data over? "timely release" means a lot of diff things to diff people.
+Daniel Barron (Yale psych resident, often writes for Scientific American) had a piece on disagreement on data sharing. NEJM published opeds in Feb and Aug 2016 arguing about details.
+Having enough time to publish but also being fair to others
+
+Human subjects and privacy issues are huge. It is hard to make sure pts understand what's the deal. No one ever reads the informed consent or asks for a copy. 
+"Data will be available to others in a de-identified fashion" - okay, but this is whole-genome data, so uh.
+Often can only release the data for specific disease that are studying - glioma, not breast cancer
+
+Proprietary data can lead to financial gain. That's always in the back of funders' minds.
+
+In epidemiology, are trying to move away from going thru physicians to get to pts; want to go directly to pts, often through Internet.
+  Pluses and minuses. Physicians can ID most appropriate subjects but can also lock off study
+  Registries - doing them online is reinventing the wheel.
+  Pt groups for rare diseases don't have funds or publicity to do studies. However, can work with them rather than with state registries to enroll people
+    Connecticut tumor registry is great, but it's very expensive to access, and when there are 40 pts with the rare disease you're trying to study in it it's not worth it
+  Majority of rare disease pts aren't in large cancer centers, and are easy to miss
+
+Developing a suite of R tools to let pt orgs w/o sig funds to help their members. Her and her grad students making their own apps to let people enroll in epi studies or clinical trials based on disease characteristics would be a lot of work.
+  Free methods for rare disease groups to enroll their pts would be v helpful
+
+
+##Shiny app to Visualize Cancer Risk Factors for 900+ Neighborhoods in Florida
+###Raymond Balise (U of Miami), Layla Bouzoubaa
+
+Census-defined places are a good starting place for defining catchment areas for disease surveillance. But a lot of census-defined areas are huge. 
+  Could use census tracts? Yup, that's what they do!
+Plan:
+Describe neighborhoods in Florida w/ demographic, economic, housing, and insurance data
+
+Census-defined places problems:
+Protecting pt anonymity. Some places/ tracts contain fewer than 200 people!
+They suppress estimates when the selected geography has less than 10 men or women affected with the disease, for HIPAA reasons.
+
+Tracts and census-defined places do not line up. Hard to match cases!
+
+Saw a result where there were 100,000 potential lost life-years of cancer - seemed insanely high. Why did that happen?
+Well, there's a tiny census-defined place that sits at the intersection of 4 defined tracts.
+
+Neighborhood and shinyneighborhood packages help
+
+Getting the data: they use acs to pull from the census and keep cached copies.
+tmap, leaflet, rgdal to draw maps w/ census tracts
+ggplot2, and a package for population pyramids
+
+They have processed acs code that lets you use their data for other locations.
+
+Next steps: cancer-specific statistics and visualizations
+  Interesting and unexpected results with age distributions
+  e.g. it appears that male baby boomers -> IV drug use in men but not women -> hepatitis distrib v skewed
+  
+ 
+Working on packages called neighborhood and shinyneighborhood to put these out - opp to collaborate.
+
+Biggest problem is aligning different geo units. Census tract is easiest. Zip code, city, etc. is quite hard.
+Census-defined places gets you there until you're at the level of cities.
+
+
+
+
+##Integrating R in Hospitals: From Workstation to Bedside 
+###Roundtable: Beth Atkinson, Joseph Chou, Peter Higgins, Stephan Kadauke, Chinonyerem Madu, and Jack Wasey 
+
+Speaking the same language as clinicians is v helpful
+Need checks if data you're pulling is wrong or inaccurate
+Documentation errors happen. Need to establish relationships with clinicians to learn how to spot docu errors.
+
+Joseph: Clinicians want to avoid risk. Don't want the coolest or most advanced thing. Want to be able to prove stuff right now with minimal risk.
+
+Often get stuff that works in little silos but not hospital-wide. Need more communication and integration.
+
+Clinicians already have many dashboards driven by operational concerns. If make it easy to build more, can get more overwhelming data overload, more things to keep track of.
+  Often, everyone wants every prediction rule on a dashborad.
+  Good to have department-level decisions about what tools to use.
+
+Joseph's asked for dashboards people don't look at or act on to be acted on; technical debt builds up. There's no point in tools they don't actually use or act on. Don't give people things that don't improve quality improvement, even if want them.
+
+Nonye - a lot of dashboards have no utility. Are just shutting down ones that aren't often used, so don't have to spend time maintaining it. If someone complains, will put them back up.
+Culture has been "if you have a project, you get a dashboard." Working on Not Doing This when people don't need dashboards. A department-wide dashboard and an interim report is often what's actually needed.
+  Need to control what people expect in terms of delieverables so don't get dashboards for the sake of dashboards
+  
+"Living systematic review" - thing Cochran Collaboration is bullish on, that updates as new studies appear.
+A self-updating site can be really good and useful.
+
+Peter Higgins: There's openness to more stats education at the med school level. U Mich just redid its med school curriculum to allow diverging, specialization. There's a research/ data science branch. 
+
+
+Closing remarks:
+Great response, planning for Sept next year
+Effective talks don't have to be highly technical! Talk about how to solve problems you found with R
