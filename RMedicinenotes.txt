@@ -1231,7 +1231,7 @@ Sample size 818 obs, 39% positive
 Covariates: 11 exposures like breastfeeding, birth order, allergies ; 3 demographic covariates like age, SES
 
 Childhood fevers increased risk. Pets and farm animals seemed to have protective effect.
-  I am not convinced these aren't proxies for SES.
+  ~~I am not convinced these aren't proxies for SES.~~ Chris let me know that this analysis did adjust for SES, year of birth, and gender. Thanks, Chris!
 
 
 Framingham heart study:
